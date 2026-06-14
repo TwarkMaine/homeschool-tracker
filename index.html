@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#fef9f2" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="School" />
+  <title>Homeschool Tracker</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%23fef9f2'/%3E%3Ccircle cx='96' cy='96' r='62' fill='none' stroke='%23a78bfa' stroke-width='18'/%3E%3Ctext x='96' y='120' font-size='72' text-anchor='middle'%3E%E2%AD%90%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ============ Profile switcher ============ -->
+  <header id="topbar">
+    <div id="profile-switcher" class="profile-switcher" role="tablist" aria-label="Choose kid"></div>
+    <button id="parent-btn" class="parent-btn" type="button" aria-label="Parent mode">⚙️</button>
+  </header>
+
+  <main id="main">
+    <!-- ============ Today view ============ -->
+    <section id="today-view">
+      <div id="day-header" class="day-header">
+        <h1 id="kid-greeting" class="kid-greeting">Today</h1>
+        <div id="streak" class="streak" aria-live="polite"></div>
+      </div>
+
+      <!-- Free time unlocked banner (hidden until day complete) -->
+      <div id="freetime-banner" class="freetime-banner" hidden>
+        <div class="freetime-emoji">🎉</div>
+        <div class="freetime-text">
+          <strong>Free time unlocked!</strong>
+          <span>All done for today. Go play! 🌟</span>
+        </div>
+      </div>
+
+      <!-- The rings -->
+      <div id="rings" class="rings" aria-label="Today's tasks"></div>
+      <p id="empty-note" class="empty-note" hidden>No tasks today — enjoy! 🌈</p>
+    </section>
+  </main>
+
+  <!-- ============ Parent PIN dialog ============ -->
+  <div id="pin-overlay" class="overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="pin-title">
+      <h2 id="pin-title">Parent mode</h2>
+      <p>Enter the 4-digit PIN.</p>
+      <input id="pin-input" class="pin-input" type="password" inputmode="numeric" maxlength="4"
+             pattern="[0-9]*" autocomplete="off" aria-label="PIN" />
+      <p id="pin-error" class="pin-error" hidden>Wrong PIN — try again.</p>
+      <div class="dialog-actions">
+        <button id="pin-cancel" type="button" class="btn btn-ghost">Cancel</button>
+        <button id="pin-ok" type="button" class="btn btn-primary">Unlock</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Parent panel ============ -->
+  <div id="parent-overlay" class="overlay" hidden>
+    <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="parent-title">
+      <div class="parent-head">
+        <h2 id="parent-title">Curriculum</h2>
+        <button id="parent-close" type="button" class="btn btn-ghost">Done</button>
+      </div>
+
+      <div id="parent-body" class="parent-body"><!-- rendered by app.js --></div>
+
+      <div class="parent-tools">
+        <button id="add-kid" type="button" class="btn btn-secondary">+ Add kid</button>
+        <button id="export-btn" type="button" class="btn btn-secondary">⬇️ Export backup (JSON)</button>
+        <button id="import-btn" type="button" class="btn btn-secondary">⬆️ Import backup</button>
+        <input id="import-file" type="file" accept="application/json,.json" hidden />
+      </div>
+      <p class="parent-hint">Tip: changes save automatically. Use Export for a safe backup.</p>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
