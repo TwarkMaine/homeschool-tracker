@@ -1,9 +1,13 @@
 // config.default.js — SEED curriculum for the homeschool tracker.
 //
 // This is DATA, not code. The parent edits this through Parent Mode in the
-// app (which writes the edited copy into IndexedDB). This file is only the
-// first-run default. Feel free to hand-edit it too — it's deliberately plain
-// and well-commented.
+// app (which writes the edited copy into IndexedDB / local storage). This file
+// is only the first-run default. Feel free to hand-edit it too — it's
+// deliberately plain and well-commented.
+//
+// NOTE: names below are neutral placeholders on purpose (this file lives in a
+// public repo). Set the real names once on the device in Parent Mode (PIN
+// 1234); they are saved only on that device and never come back here.
 //
 // Shape:
 //   parentPin : 4-digit string gating Parent Mode (default "1234").
@@ -23,34 +27,35 @@ export const defaultConfig = {
 
   kids: [
     // ----------------------------------------------------------------
-    // Leni, 7 — a reader, gets text labels alongside icons.
+    // Older child (placeholder) — a reader; gets text labels + icons.
+    // Rename in Parent Mode.
     // ----------------------------------------------------------------
     {
-      id: "leni",
-      name: "Leni",
+      id: "child-a",
+      name: "Child 1",
       age: 7,
       theme: "violet",
       tasks: [
         {
-          id: "leni-music",
+          id: "a-music",
           label: "Music",
           icon: "🎵",
           recurrence: { type: "weekdays", days: [1, 3, 5] }, // Mon/Wed/Fri
         },
         {
-          id: "leni-booktalk",
+          id: "a-booktalk",
           label: "Book talk / Reading",
           icon: "📚",
           recurrence: { type: "daily" },
         },
         {
-          id: "leni-beast",
+          id: "a-beast",
           label: "Beast Academy",
           icon: "🧮",
           recurrence: { type: "weekdays", days: [1, 2, 3, 4, 5] }, // Mon–Fri
         },
         {
-          id: "leni-bio",
+          id: "a-bio",
           label: "Biology",
           icon: "🔬",
           recurrence: { type: "weekly", day: 4 }, // Thursdays
@@ -59,29 +64,30 @@ export const defaultConfig = {
     },
 
     // ----------------------------------------------------------------
-    // Johann, 5 — non-reader. His view leans on the big emoji icons;
-    // text labels still render but are not required to use his rings.
+    // Younger child (placeholder) — non-reader. View leans on the big
+    // emoji icons; text labels render but aren't required. Rename in
+    // Parent Mode.
     // ----------------------------------------------------------------
     {
-      id: "johann",
-      name: "Johann",
+      id: "child-b",
+      name: "Child 2",
       age: 5,
       theme: "teal",
       tasks: [
         {
-          id: "johann-phonics",
+          id: "b-phonics",
           label: "Phonics",
           icon: "🔤",
           recurrence: { type: "weekdays", days: [1, 2, 3, 4, 5] }, // Mon–Fri
         },
         {
-          id: "johann-khan",
+          id: "b-khan",
           label: "Khan Kids",
           icon: "🦘",
           recurrence: { type: "weekdays", days: [1, 2, 3, 4, 5] }, // Mon–Fri
         },
         {
-          id: "johann-readaloud",
+          id: "b-readaloud",
           label: "Read-aloud",
           icon: "📖",
           recurrence: { type: "daily" },

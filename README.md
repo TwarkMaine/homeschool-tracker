@@ -29,8 +29,9 @@ You can also just open `index.html` directly in a browser for a quick look
 
 ## Where the curriculum lives
 
-The seed curriculum is `config.default.js` (two kids: **Leni**, 7, and
-**Johann**, 5). It is plain, commented data — edit it directly if you like.
+The seed curriculum is `config.default.js` (two placeholder kids). It is plain,
+commented data — edit it directly if you like. Set the real names on the device
+in **Parent Mode**; they're stored only on that device, never in this repo.
 
 On first run the app copies that seed into IndexedDB; after that, edits made in
 **Parent Mode** are what's used. Each task has an emoji icon, a label, and a
