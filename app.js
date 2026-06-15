@@ -18,36 +18,66 @@ const DB_NAME = "homeschool";
 const DB_VERSION = 1;
 const STORE = "kv";
 
+// Storage is best-effort. On iOS Safari IndexedDB can be unavailable or fail
+// to open on load; if so we degrade to in-memory (the app still works for the
+// session, it just won't persist) rather than showing a blank screen.
+let storageOK = true;
+
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    if (typeof indexedDB === "undefined" || !indexedDB) {
+      reject(new Error("IndexedDB unavailable"));
+      return;
+    }
+    let settled = false;
+    // iOS sometimes never fires success/error on first open — time out.
+    const timer = setTimeout(() => {
+      if (!settled) { settled = true; reject(new Error("IndexedDB open timed out")); }
+    }, 3000);
+    let req;
+    try {
+      req = indexedDB.open(DB_NAME, DB_VERSION);
+    } catch (e) {
+      clearTimeout(timer); reject(e); return;
+    }
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => { if (!settled) { settled = true; clearTimeout(timer); resolve(req.result); } };
+    req.onerror = () => { if (!settled) { settled = true; clearTimeout(timer); reject(req.error); } };
   });
 }
 
 async function kvGet(key) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readonly");
-    const r = tx.objectStore(STORE).get(key);
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
-  });
+  if (!storageOK) return undefined;
+  try {
+    const db = await openDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readonly");
+      const r = tx.objectStore(STORE).get(key);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+  } catch (e) {
+    storageOK = false;
+    return undefined;
+  }
 }
 
 async function kvSet(key, value) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  if (!storageOK) return;
+  try {
+    const db = await openDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    storageOK = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -486,9 +516,48 @@ if ("serviceWorker" in navigator) {
 }
 
 // ---------------------------------------------------------------------------
+// Visible error reporting — never show a silent blank screen.
+// ---------------------------------------------------------------------------
+function showFatal(msg) {
+  const box = document.createElement("div");
+  box.setAttribute("role", "alert");
+  box.style.cssText =
+    "margin:24px;padding:16px 20px;border-radius:12px;background:#fff3f3;" +
+    "color:#7a1020;font:16px/1.5 -apple-system,system-ui,sans-serif;" +
+    "border:1px solid #f0b3b3;max-width:640px;";
+  box.textContent = "The tracker hit a snag: " + msg;
+  document.body.appendChild(box);
+}
+window.addEventListener("error", (e) =>
+  showFatal((e.message || "script error") + (e.filename ? " (" + e.filename + ")" : ""))
+);
+window.addEventListener("unhandledrejection", (e) =>
+  showFatal(String((e.reason && e.reason.message) || e.reason || "promise error"))
+);
+
+// ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 (async function boot() {
-  await loadState();
-  renderAll();
+  try {
+    await loadState();
+    // If storage never came up, run from the seed so the app still works.
+    if (!state.config) {
+      state.config = JSON.parse(JSON.stringify(defaultConfig));
+      state.completions = {};
+      state.activeKidId = state.config.kids[0] ? state.config.kids[0].id : null;
+    }
+    renderAll();
+    if (!storageOK) {
+      const note = document.createElement("div");
+      note.style.cssText =
+        "margin:12px 16px;padding:8px 12px;border-radius:10px;background:#fff8e6;" +
+        "color:#6b4e00;font:14px/1.4 -apple-system,system-ui,sans-serif;border:1px solid #f0d99b;";
+      note.textContent =
+        "⚠️ This device isn't letting the app save progress (check Safari isn't in Private mode). It still works for now, but taps won't be remembered.";
+      document.body.insertBefore(note, document.body.firstChild);
+    }
+  } catch (err) {
+    showFatal((err && err.message) || String(err));
+  }
 })();
