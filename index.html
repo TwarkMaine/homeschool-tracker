@@ -8,6 +8,50 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="School" />
   <title>Homeschool Tracker</title>
+  <script>
+    // Early, classic-script guard (runs before the module). If app.js never
+    // loads/executes on this device, the module's own handlers never install —
+    // so catch errors here and run a watchdog that surfaces a blank-screen as
+    // a readable message instead of silent white.
+    (function () {
+      function show(msg) {
+        if (document.getElementById("boot-error")) return;
+        var b = document.createElement("div");
+        b.id = "boot-error";
+        b.setAttribute("role", "alert");
+        b.style.cssText =
+          "margin:24px;padding:16px 20px;border-radius:12px;background:#fff3f3;" +
+          "color:#7a1020;font:16px/1.5 -apple-system,system-ui,sans-serif;" +
+          "border:1px solid #f0b3b3;";
+        b.textContent = msg;
+        (document.body || document.documentElement).appendChild(b);
+      }
+      window.addEventListener("error", function (e) {
+        show("Couldn't start: " + (e.message || "script error") +
+             (e.filename ? " — " + e.filename : ""));
+      });
+      window.addEventListener("unhandledrejection", function (e) {
+        show("Couldn't start: " + ((e.reason && e.reason.message) || e.reason || "error"));
+      });
+      // Watchdog: if nothing rendered after 6s, the app files probably never
+      // loaded (network/server issue reaching this page).
+      window.addEventListener("load", function () {
+        setTimeout(function () {
+          var rings = document.getElementById("rings");
+          var switcher = document.getElementById("profile-switcher");
+          var rendered =
+            (rings && rings.children.length) ||
+            (switcher && switcher.children.length) ||
+            document.getElementById("boot-error");
+          if (!rendered) {
+            show("The app files didn't load. This is usually the connection to " +
+                 "the server dropping. Make sure the server is running and the " +
+                 "iPad is on the same network, then reload.");
+          }
+        }, 6000);
+      });
+    })();
+  </script>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%23fef9f2'/%3E%3Ccircle cx='96' cy='96' r='62' fill='none' stroke='%23a78bfa' stroke-width='18'/%3E%3Ctext x='96' y='120' font-size='72' text-anchor='middle'%3E%E2%AD%90%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="styles.css" />
