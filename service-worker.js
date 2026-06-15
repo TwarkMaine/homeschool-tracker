@@ -1,7 +1,14 @@
-// service-worker.js — minimal offline-first app-shell cache.
-// Bump CACHE when you change any shell file so clients pick up the new copy.
+// service-worker.js — network-first app-shell cache.
+//
+// Update model (the point of network-first): when the iPad opens the app
+// AND the host is reachable, it always fetches the latest files and quietly
+// refreshes its saved copy. When the host is NOT reachable (offline), it
+// serves the last saved copy. So "pushing an update" = change a file, reopen
+// the app — no version number to remember, no reinstall. The CACHE name below
+// only needs bumping if a cached file ever gets stuck; normal updates don't
+// require it.
 
-const CACHE = "homeschool-shell-v1";
+const CACHE = "homeschool-shell-v2";
 
 // The app shell. Relative URLs resolve against the SW scope.
 const SHELL = [
@@ -31,23 +38,27 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Cache-first for shell, with a network fallback that also fills the cache.
+// Network-first for the shell: try the network, refresh the cached copy on
+// success, and fall back to the cached copy when offline. This is what makes
+// updates "just appear" on reopen while still working fully offline.
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
+  // Only manage same-origin requests (the app's own files).
+  if (new URL(req.url).origin !== self.location.origin) return;
   event.respondWith(
-    caches.match(req).then((cached) => {
-      if (cached) return cached;
-      return fetch(req)
-        .then((res) => {
-          // Only cache same-origin successful responses.
-          if (res && res.ok && new URL(req.url).origin === self.location.origin) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-    })
+    fetch(req)
+      .then((res) => {
+        // Got a fresh copy from the host — cache it and serve it.
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy));
+        }
+        return res;
+      })
+      .catch(() =>
+        // Offline (or host down): serve the last saved copy.
+        caches.match(req).then((cached) => cached || caches.match("./index.html"))
+      )
   );
 });
