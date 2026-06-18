@@ -18,10 +18,54 @@ const DB_NAME = "homeschool";
 const DB_VERSION = 1;
 const STORE = "kv";
 
-// Storage is best-effort. On iOS Safari IndexedDB can be unavailable or fail
-// to open on load; if so we degrade to in-memory (the app still works for the
-// session, it just won't persist) rather than showing a blank screen.
-let storageOK = true;
+// Storage is best-effort and DURABLE BY DESIGN. iOS Safari is the threat
+// model: (1) it evicts a web app's storage after ~7 days of non-use, and
+// (2) IndexedDB sometimes fails to open at all on a given load. Both wiped a
+// real install once. Defenses, in order of importance:
+//   1. navigator.storage.persist() — asks iOS to EXEMPT us from the 7-day
+//      eviction. This is the only thing that actually stops the silent wipe.
+//   2. Dual-write to localStorage as well as IndexedDB — independent failure
+//      modes, so an IndexedDB hiccup alone can't lose data; whichever store
+//      has data on next boot wins (IndexedDB preferred).
+//   3. Degrade to in-memory only if BOTH stores are dead (app still runs the
+//      session) instead of ever showing a blank screen.
+let storageOK = true; // IndexedDB usable this session
+let lsOK = true; // localStorage usable this session
+
+// localStorage mirror — synchronous, separate quota/failure path from IDB.
+const LS_PREFIX = "homeschool:";
+function lsGet(key) {
+  try {
+    const v = localStorage.getItem(LS_PREFIX + key);
+    return v == null ? undefined : JSON.parse(v);
+  } catch (e) {
+    lsOK = false;
+    return undefined;
+  }
+}
+function lsSet(key, value) {
+  try {
+    localStorage.setItem(LS_PREFIX + key, JSON.stringify(value));
+    return true;
+  } catch (e) {
+    lsOK = false;
+    return false;
+  }
+}
+
+// Ask iOS/Safari to make our storage persistent (exempt from 7-day eviction).
+// Idempotent and best-effort; returns true if storage is persisted.
+async function requestPersistence() {
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      if (await navigator.storage.persisted()) return true;
+      return await navigator.storage.persist();
+    }
+  } catch (e) {
+    /* not supported / blocked — nothing to do */
+  }
+  return false;
+}
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -50,34 +94,46 @@ function openDB() {
 }
 
 async function kvGet(key) {
-  if (!storageOK) return undefined;
-  try {
-    const db = await openDB();
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, "readonly");
-      const r = tx.objectStore(STORE).get(key);
-      r.onsuccess = () => resolve(r.result);
-      r.onerror = () => reject(r.error);
-    });
-  } catch (e) {
-    storageOK = false;
-    return undefined;
+  // Prefer IndexedDB; fall back to the localStorage mirror if IDB is
+  // unavailable, failed, or simply has no value for this key.
+  if (storageOK) {
+    try {
+      const db = await openDB();
+      const val = await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE, "readonly");
+        const r = tx.objectStore(STORE).get(key);
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      });
+      if (val !== undefined && val !== null) return val;
+    } catch (e) {
+      storageOK = false;
+    }
   }
+  return lsGet(key);
 }
 
 async function kvSet(key, value) {
-  if (!storageOK) return;
-  try {
-    const db = await openDB();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, "readwrite");
-      tx.objectStore(STORE).put(value, key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (e) {
-    storageOK = false;
+  // Always mirror to localStorage (cheap, independent failure mode), and
+  // write IndexedDB when it's usable. A save "succeeds" if EITHER store took
+  // it; we only fall back to memory-only when both are dead.
+  const wroteLS = lsSet(key, value);
+  let wroteIDB = false;
+  if (storageOK) {
+    try {
+      const db = await openDB();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE, "readwrite");
+        tx.objectStore(STORE).put(value, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      wroteIDB = true;
+    } catch (e) {
+      storageOK = false;
+    }
   }
+  return wroteIDB || wroteLS;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +170,10 @@ async function loadState() {
   if (!state.activeKidId || !config.kids.some((k) => k.id === state.activeKidId)) {
     state.activeKidId = config.kids[0] ? config.kids[0].id : null;
   }
+  // Backfill BOTH stores from whatever we just loaded, so an install that only
+  // ever had IndexedDB now also has a localStorage mirror (and vice versa).
+  await kvSet("config", state.config);
+  await kvSet("completions", state.completions);
 }
 
 async function saveConfig() { await kvSet("config", state.config); }
@@ -181,7 +241,8 @@ function renderToday() {
   const complete = isDayComplete(state.config, kid.id, state.today, state.completions);
   const streak = currentStreak(state.config, kid.id, state.today, state.completions);
 
-  els.streak.textContent = streak > 0 ? `🔥 ${streak}-day streak` : "";
+  els.streak.textContent =
+    streak > 0 ? `🔥 ${streak}-day streak` : "🔥 No streak yet — start today!";
 
   // Rings
   els.rings.innerHTML = "";
@@ -540,6 +601,9 @@ window.addEventListener("unhandledrejection", (e) =>
 // ---------------------------------------------------------------------------
 (async function boot() {
   try {
+    // Ask to be exempt from iOS's 7-day storage eviction BEFORE loading, so a
+    // freshly-seeded install is protected from the very first run.
+    await requestPersistence();
     await loadState();
     // If storage never came up, run from the seed so the app still works.
     if (!state.config) {
@@ -548,7 +612,11 @@ window.addEventListener("unhandledrejection", (e) =>
       state.activeKidId = state.config.kids[0] ? state.config.kids[0].id : null;
     }
     renderAll();
-    if (!storageOK) {
+    // Re-affirm persistence now that data exists (some browsers only grant it
+    // once there's something to persist).
+    requestPersistence();
+    // Only warn when BOTH durable stores are dead — i.e. truly memory-only.
+    if (!storageOK && !lsOK) {
       const note = document.createElement("div");
       note.style.cssText =
         "margin:12px 16px;padding:8px 12px;border-radius:10px;background:#fff8e6;" +

@@ -8,7 +8,7 @@
 // only needs bumping if a cached file ever gets stuck; normal updates don't
 // require it.
 
-const CACHE = "homeschool-shell-v2";
+const CACHE = "homeschool-shell-v4";
 
 // The app shell. Relative URLs resolve against the SW scope.
 const SHELL = [

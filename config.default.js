@@ -40,7 +40,7 @@ export const defaultConfig = {
           id: "a-music",
           label: "Music",
           icon: "🎵",
-          recurrence: { type: "weekdays", days: [1, 3, 5] }, // Mon/Wed/Fri
+          recurrence: { type: "weekdays", days: [1, 2, 3, 4, 5] }, // Mon–Fri
         },
         {
           id: "a-booktalk",
@@ -58,7 +58,7 @@ export const defaultConfig = {
           id: "a-bio",
           label: "Biology",
           icon: "🔬",
-          recurrence: { type: "weekly", day: 4 }, // Thursdays
+          recurrence: { type: "weekdays", days: [1, 2, 3, 4, 5] }, // Mon–Fri
         },
       ],
     },
