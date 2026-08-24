@@ -64,6 +64,18 @@
   </header>
 
   <main id="main">
+    <!-- ============ Monthly record prompt (parent-facing, once a month) ==== -->
+    <div id="record-banner" class="record-banner" hidden>
+      <div class="record-banner-text">
+        <strong id="record-banner-title">Last month's record is ready</strong>
+        <span id="record-banner-sub"></span>
+      </div>
+      <div class="record-banner-actions">
+        <button id="record-save-btn" type="button" class="btn btn-primary">📄 Save it</button>
+        <button id="record-later-btn" type="button" class="btn btn-ghost">Later</button>
+      </div>
+    </div>
+
     <!-- ============ Today view ============ -->
     <section id="today-view">
       <div id="day-header" class="day-header">
@@ -111,6 +123,12 @@
 
       <div id="parent-body" class="parent-body"><!-- rendered by app.js --></div>
 
+      <div class="parent-records">
+        <h3>Monthly records</h3>
+        <p class="parent-hint">A printable page per child, built from the taps already made. Save one whenever you like.</p>
+        <div id="record-months" class="record-months"><!-- rendered by app.js --></div>
+      </div>
+
       <div class="parent-tools">
         <button id="add-kid" type="button" class="btn btn-secondary">+ Add kid</button>
         <button id="export-btn" type="button" class="btn btn-secondary">⬇️ Export backup (JSON)</button>
@@ -118,6 +136,24 @@
         <input id="import-file" type="file" accept="application/json,.json" hidden />
       </div>
       <p class="parent-hint">Tip: changes save automatically. Use Export for a safe backup.</p>
+    </div>
+  </div>
+
+  <!-- ============ Monthly record viewer ============ -->
+  <!-- The record is rendered into a sandboxed same-origin iframe so the saved
+       file, the printed page and the page on screen are byte-for-byte the same
+       artifact, and so the app's own styles can never leak into it. -->
+  <div id="record-overlay" class="overlay overlay-full" hidden>
+    <div class="record-shell" role="dialog" aria-modal="true" aria-labelledby="record-title">
+      <div class="record-bar">
+        <h2 id="record-title">Monthly record</h2>
+        <div class="record-bar-actions">
+          <button id="record-print" type="button" class="btn btn-primary">🖨️ Print / Save as PDF</button>
+          <button id="record-download" type="button" class="btn btn-secondary">⬇️ Save as a file</button>
+          <button id="record-close" type="button" class="btn btn-ghost">Close</button>
+        </div>
+      </div>
+      <iframe id="record-frame" class="record-frame" title="Monthly record preview"></iframe>
     </div>
   </div>
 

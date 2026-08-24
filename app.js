@@ -8,6 +8,13 @@ import {
   toggleCompletion,
   serializeState,
   deserializeState,
+  escapeHtml,
+  monthKeyOf,
+  previousMonthKey,
+  monthLabel,
+  monthHasRecord,
+  buildMonthlyRecordHtml,
+  recordFileName,
 } from "./logic.js";
 import { defaultConfig } from "./config.default.js";
 
@@ -203,6 +210,18 @@ const els = {
   exportBtn: $("export-btn"),
   importBtn: $("import-btn"),
   importFile: $("import-file"),
+  recordBanner: $("record-banner"),
+  recordBannerTitle: $("record-banner-title"),
+  recordBannerSub: $("record-banner-sub"),
+  recordSaveBtn: $("record-save-btn"),
+  recordLaterBtn: $("record-later-btn"),
+  recordMonths: $("record-months"),
+  recordOverlay: $("record-overlay"),
+  recordTitle: $("record-title"),
+  recordFrame: $("record-frame"),
+  recordPrint: $("record-print"),
+  recordDownload: $("record-download"),
+  recordClose: $("record-close"),
 };
 
 // ---------------------------------------------------------------------------
@@ -274,7 +293,14 @@ function isTaskDone(kidId, date, taskId) {
 }
 
 async function onToggle(kidId, taskId) {
-  state.completions = toggleCompletion(state.completions, kidId, state.today, taskId);
+  // Stamp the task's CURRENT wording into the completion. This is what makes
+  // the monthly record contemporaneous: the day keeps the words it was ticked
+  // with, so editing the curriculum later never rewrites a past month.
+  const kid = state.config.kids.find((k) => k.id === kidId);
+  const task = kid && (kid.tasks || []).find((t) => t.id === taskId);
+  const snapshot = task ? { label: task.label || "", resource: task.resource || "" } : undefined;
+
+  state.completions = toggleCompletion(state.completions, kidId, state.today, taskId, snapshot);
   await saveCompletions();
   renderToday();
 }
@@ -282,6 +308,7 @@ async function onToggle(kidId, taskId) {
 function renderAll() {
   renderSwitcher();
   renderToday();
+  renderRecordBanner();
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +359,7 @@ const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 function openParentPanel() {
   renderParentPanel();
+  renderRecordMonths();
   els.parentOverlay.hidden = false;
 }
 els.parentClose.addEventListener("click", async () => {
@@ -398,6 +426,7 @@ function renderKidBlock(kid, kidIdx) {
       id: uid(kid.id || "task"),
       label: "New task",
       icon: "⭐",
+      resource: "",
       recurrence: { type: "daily" },
     });
     autosave();
@@ -409,6 +438,9 @@ function renderKidBlock(kid, kidIdx) {
 }
 
 function renderTaskRow(kid, task, taskIdx) {
+  const wrap = document.createElement("div");
+  wrap.className = "task-entry";
+
   const row = document.createElement("div");
   row.className = "task-row";
 
@@ -422,7 +454,8 @@ function renderTaskRow(kid, task, taskIdx) {
   const label = document.createElement("input");
   label.className = "task-label";
   label.value = task.label || "";
-  label.setAttribute("aria-label", "Task name");
+  label.setAttribute("aria-label", "Subject name");
+  label.placeholder = "Subject";
   label.addEventListener("input", () => { task.label = label.value; autosave(); });
   row.appendChild(label);
 
@@ -492,8 +525,26 @@ function renderTaskRow(kid, task, taskIdx) {
     renderParentPanel();
   });
   row.appendChild(del);
+  wrap.appendChild(row);
 
-  return row;
+  // Second line: the material, named by title. Only ever seen here and on the
+  // printed record — never on the kids' screen.
+  const resRow = document.createElement("div");
+  resRow.className = "resource-row";
+  const resLabel = document.createElement("span");
+  resLabel.className = "resource-caption";
+  resLabel.textContent = "Book / programme used";
+  const res = document.createElement("input");
+  res.className = "task-resource";
+  res.value = task.resource || "";
+  res.setAttribute("aria-label", "Book or programme used for " + (task.label || "this task"));
+  res.placeholder = "e.g. Beast Academy Level 3";
+  res.addEventListener("input", () => { task.resource = res.value; autosave(); });
+  resRow.appendChild(resLabel);
+  resRow.appendChild(res);
+  wrap.appendChild(resRow);
+
+  return wrap;
 }
 
 let autosaveTimer = null;
@@ -514,6 +565,161 @@ els.addKid.addEventListener("click", () => {
   });
   autosave();
   renderParentPanel();
+});
+
+// ---------------------------------------------------------------------------
+// The monthly record (Phase 3b)
+//
+// One tap on the first open of a new month saves the month just finished. The
+// parent types nothing. The record is rendered into a same-origin iframe so
+// what is on screen, what prints, and what downloads are the same file.
+// ---------------------------------------------------------------------------
+
+// Months already saved, so the once-a-month prompt stops asking.
+let savedMonths = [];
+// "Later" hides the prompt for this session only. It comes back on next open,
+// because a prompt that can be dismissed for good is a prompt that gets missed.
+let promptSnoozed = false;
+let openRecordMonth = null;
+
+async function loadSavedMonths() {
+  const v = await kvGet("recordsSaved");
+  savedMonths = Array.isArray(v) ? v : [];
+}
+
+async function markMonthSaved(monthKey) {
+  if (!savedMonths.includes(monthKey)) {
+    savedMonths = savedMonths.concat([monthKey]);
+    await kvSet("recordsSaved", savedMonths);
+  }
+  renderRecordBanner();
+  if (!els.parentOverlay.hidden) renderRecordMonths();
+}
+
+// The month the prompt is about: the one just finished, if it holds anything
+// worth saving and has not been saved already.
+function pendingRecordMonth() {
+  const prev = previousMonthKey(monthKeyOf(state.today));
+  if (savedMonths.includes(prev)) return null;
+  if (!monthHasRecord(state.config, prev, state.completions)) return null;
+  return prev;
+}
+
+function renderRecordBanner() {
+  const pending = promptSnoozed ? null : pendingRecordMonth();
+  els.recordBanner.hidden = !pending;
+  if (!pending) return;
+  els.recordBannerTitle.textContent = `Save the record for ${monthLabel(pending)}`;
+  els.recordBannerSub.textContent =
+    "One page per child, listing every day worked and the books used.";
+  els.recordBanner.dataset.month = pending;
+}
+
+function buildRecordHtml(monthKey) {
+  return buildMonthlyRecordHtml({
+    config: state.config,
+    completions: state.completions,
+    monthKey,
+    generatedOn: state.today,
+  });
+}
+
+function openRecord(monthKey) {
+  openRecordMonth = monthKey;
+  els.recordTitle.textContent = `Record of daily instruction, ${monthLabel(monthKey)}`;
+  // srcdoc keeps the document same-origin and entirely local. No fetch, no
+  // blob URL to leak, nothing to load from anywhere.
+  els.recordFrame.srcdoc = buildRecordHtml(monthKey);
+  els.recordOverlay.hidden = false;
+}
+
+function printRecord() {
+  const frame = els.recordFrame;
+  try {
+    if (frame.contentWindow) {
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+      return;
+    }
+  } catch (e) {
+    /* fall through to the file, which always works */
+  }
+  downloadRecord();
+}
+
+function downloadRecord() {
+  if (!openRecordMonth) return;
+  const blob = new Blob([buildRecordHtml(openRecordMonth)], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = recordFileName(openRecordMonth);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Parent mode: every month that has anything in it, newest first, each
+// re-savable at any time. This is the safety net for a month whose prompt
+// was missed.
+function renderRecordMonths() {
+  els.recordMonths.innerHTML = "";
+  const months = [];
+  for (const kid of state.config.kids) {
+    const byDate = state.completions[kid.id] || {};
+    for (const d of Object.keys(byDate)) {
+      const mk = d.slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(mk) && !months.includes(mk)) months.push(mk);
+    }
+  }
+  months.sort().reverse();
+
+  if (months.length === 0) {
+    const p = document.createElement("p");
+    p.className = "parent-hint";
+    p.textContent = "Nothing recorded yet. Once the rings get tapped, months appear here.";
+    els.recordMonths.appendChild(p);
+    return;
+  }
+
+  for (const mk of months.slice(0, 24)) {
+    const row = document.createElement("div");
+    row.className = "record-month-row";
+    const name = document.createElement("span");
+    name.className = "record-month-name";
+    name.textContent = monthLabel(mk) + (savedMonths.includes(mk) ? " ✓ saved" : "");
+    const btn = document.createElement("button");
+    btn.className = "btn btn-secondary";
+    btn.type = "button";
+    btn.textContent = "Open";
+    btn.addEventListener("click", () => openRecord(mk));
+    row.appendChild(name);
+    row.appendChild(btn);
+    els.recordMonths.appendChild(row);
+  }
+}
+
+els.recordSaveBtn.addEventListener("click", async () => {
+  const mk = els.recordBanner.dataset.month;
+  if (!mk) return;
+  openRecord(mk);
+  await markMonthSaved(mk);
+  printRecord();
+});
+els.recordLaterBtn.addEventListener("click", () => {
+  promptSnoozed = true;
+  renderRecordBanner();
+});
+els.recordPrint.addEventListener("click", printRecord);
+els.recordDownload.addEventListener("click", async () => {
+  downloadRecord();
+  if (openRecordMonth) await markMonthSaved(openRecordMonth);
+});
+els.recordClose.addEventListener("click", () => {
+  els.recordOverlay.hidden = true;
+  els.recordFrame.srcdoc = "";
+  openRecordMonth = null;
 });
 
 // ---------------------------------------------------------------------------
@@ -561,12 +767,6 @@ els.importFile.addEventListener("change", async () => {
 // ---------------------------------------------------------------------------
 // Misc
 // ---------------------------------------------------------------------------
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
-  );
-}
-
 // Service worker registration (offline app shell).
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -605,6 +805,7 @@ window.addEventListener("unhandledrejection", (e) =>
     // freshly-seeded install is protected from the very first run.
     await requestPersistence();
     await loadState();
+    await loadSavedMonths();
     // If storage never came up, run from the seed so the app still works.
     if (!state.config) {
       state.config = JSON.parse(JSON.stringify(defaultConfig));

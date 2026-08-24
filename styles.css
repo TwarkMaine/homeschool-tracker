@@ -317,3 +317,86 @@ html, body {
 .parent-hint { color: var(--ink-soft); font-size: 0.9rem; margin: 10px 0 0; }
 
 [hidden] { display: none !important; }
+
+/* ==========================================================================
+   The monthly record (Phase 3b)
+   ========================================================================== */
+
+/* The once-a-month prompt. Deliberately sits above the rings on the main
+   screen: hiding it behind the PIN is how a once-a-month job gets missed. */
+.record-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0 0 20px;
+  padding: 14px 18px;
+  background: var(--card);
+  border: 2px solid var(--accent-soft);
+  border-left: 8px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.record-banner-text { flex: 1; min-width: 200px; display: grid; gap: 2px; }
+.record-banner-text strong { font-size: 1.05rem; }
+.record-banner-text span { color: var(--ink-soft); font-size: 0.9rem; }
+.record-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Parent mode: the list of saveable months. */
+.parent-records { margin-top: 22px; padding-top: 14px; border-top: 2px solid var(--line); }
+.parent-records h3 { margin: 0; font-size: 1.05rem; }
+.record-months { margin-top: 10px; display: grid; gap: 6px; }
+.record-month-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.record-month-name { font-size: 0.95rem; }
+
+/* Curriculum editor: the material sits on its own line under the subject,
+   because a book title needs far more room than a subject name. */
+/* A task is now two lines (subject, then material), so the remove button is
+   pinned to the block's top-right instead of wrapping between them. */
+.task-entry { position: relative; border-top: 1px solid var(--line); padding-right: 52px; }
+.task-entry .task-row { border-top: 0; padding-bottom: 4px; }
+.task-entry .row-tools { position: absolute; top: 10px; right: 0; margin-left: 0; }
+.resource-row { display: flex; align-items: center; gap: 8px; padding: 0 0 10px 64px; }
+.resource-caption { color: var(--ink-soft); font-size: 0.75rem; white-space: nowrap; }
+.resource-row input.task-resource {
+  flex: 1;
+  min-width: 140px;
+  font-size: 0.95rem;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  min-height: 44px;
+}
+@media (max-width: 560px) {
+  .resource-row { padding-left: 0; flex-wrap: wrap; }
+}
+
+/* The record viewer. Full-bleed so the page is read at a sensible size. */
+.overlay-full { padding: 0; place-items: stretch; }
+.record-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--card);
+}
+.record-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-bottom: 2px solid var(--line);
+  background: var(--card);
+}
+.record-bar h2 { margin: 0; font-size: 1.05rem; }
+.record-bar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.record-frame { flex: 1; width: 100%; border: 0; background: #f4f2ee; }
