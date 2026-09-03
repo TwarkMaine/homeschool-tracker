@@ -21,6 +21,9 @@ import {
   instructionDayCount,
   recordDaysForMonth,
   monthHasRecord,
+  ageOn,
+  kidAgeFor,
+  describeRecurrence,
   buildMonthlyRecordHtml,
   recordFileName,
   escapeHtml,
@@ -165,6 +168,50 @@ check("formatLongDate spells everything out",
   formatLongDate("2026-08-14") === "Friday 14 August 2026");
 check("recordFileName is dated", recordFileName("2026-08") === "instruction-record-2026-08.html");
 
+// --- Age at the end of the covered month -------------------------------
+check("ageOn 2019-03-12 at 2026-08-31", ageOn("2019-03-12", "2026-08-31") === 7);
+check("ageOn 2019-03-12 at 2026-03-11", ageOn("2019-03-12", "2026-03-11") === 6);
+check("ageOn 2019-03-12 at 2026-03-12", ageOn("2019-03-12", "2026-03-12") === 7);
+check("ageOn 2021-06-30 at 2026-06-30", ageOn("2021-06-30", "2026-06-30") === 5);
+check("ageOn 2021-06-30 at 2026-06-29", ageOn("2021-06-30", "2026-06-29") === 4);
+check("ageOn 2020-02-29 at 2026-02-28", ageOn("2020-02-29", "2026-02-28") === 6);
+check("ageOn 2020-02-29 at 2026-03-01", ageOn("2020-02-29", "2026-03-01") === 6);
+check("ageOn 2024-02-29 at 2028-02-29", ageOn("2024-02-29", "2028-02-29") === 4);
+check("ageOn 2018-12-31 at 2026-01-01", ageOn("2018-12-31", "2026-01-01") === 7);
+check("ageOn 2026-08-31 at 2026-08-31", ageOn("2026-08-31", "2026-08-31") === 0);
+check("ageOn rejects a birth date after the target date", ageOn("2026-09-15", "2026-08-31") === null);
+check("ageOn rejects an undefined birth date", ageOn(undefined, "2026-08-31") === null);
+check("ageOn rejects a non-padded birth date", ageOn("2019-3-12", "2026-08-31") === null);
+check("ageOn rejects 2019-02-29", ageOn("2019-02-29", "2026-08-31") === null);
+check("ageOn rejects month 13", ageOn("2019-13-01", "2026-08-31") === null);
+
+check("kidAgeFor prefers born over a stale age",
+  kidAgeFor({ born: "2019-03-12", age: 5 }, "2026-08-31") === 7);
+check("kidAgeFor falls back to age", kidAgeFor({ age: 5 }, "2026-08-31") === 5);
+check("kidAgeFor gives null for neither", kidAgeFor({}, "2026-08-31") === null);
+
+// --- Human recurrence descriptions ------------------------------------
+check("describeRecurrence daily",
+  describeRecurrence({ type: "daily" }) === "Every day");
+check("describeRecurrence Monday to Friday",
+  describeRecurrence({ type: "weekdays", days: [1, 2, 3, 4, 5] }) === "Monday to Friday");
+check("describeRecurrence unordered Monday to Friday",
+  describeRecurrence({ type: "weekdays", days: [5, 4, 3, 2, 1] }) === "Monday to Friday");
+check("describeRecurrence all seven days",
+  describeRecurrence({ type: "weekdays", days: [0, 1, 2, 3, 4, 5, 6] }) === "Every day");
+check("describeRecurrence several weekdays",
+  describeRecurrence({ type: "weekdays", days: [1, 3, 5] }) === "Mondays, Wednesdays and Fridays");
+check("describeRecurrence one weekday",
+  describeRecurrence({ type: "weekdays", days: [3] }) === "Wednesdays");
+check("describeRecurrence weekly",
+  describeRecurrence({ type: "weekly", day: 3 }) === "Wednesdays");
+check("describeRecurrence empty days",
+  describeRecurrence({ type: "weekdays", days: [] }) === "No days set");
+check("describeRecurrence missing recurrence",
+  describeRecurrence(undefined) === "No days set");
+check("describeRecurrence invalid weekly day",
+  describeRecurrence({ type: "weekly", day: 9 }) === "No days set");
+
 // --- A config carrying resource titles ----------------------------------
 const recConfig = {
   kids: [
@@ -280,6 +327,14 @@ check("a legacy entry for a deleted task prints its id, flagged removed",
 const html = buildMonthlyRecordHtml({
   config: recConfig, completions: rec, monthKey: "2026-08", generatedOn: "2026-09-01",
 });
+
+function frontOf(documentHtml) {
+  const start = documentHtml.indexOf('<section class="record-page front-page">');
+  const next = documentHtml.indexOf('<section class="record-page', start + 1);
+  return documentHtml.slice(start, next === -1 ? undefined : next);
+}
+
+const front = frontOf(html);
 check("record is a complete HTML document", /^<!DOCTYPE html>/.test(html) && /<\/html>/.test(html));
 check("record names the month in full", html.includes("August 2026"));
 check("record names each child", html.includes("Child 1") && html.includes("Child 2"));
@@ -292,9 +347,65 @@ check("record states when it was produced", html.includes("Tuesday 1 September 2
 check("record gives a child with no days an explicit line, not a blank",
   buildMonthlyRecordHtml({ config: recConfig, completions: {}, monthKey: "2026-08", generatedOn: "2026-09-01" })
     .includes("No days of instruction were recorded"));
-check("record has one page per child",
-  (html.match(/class="record-page"/g) || []).length === 2);
 check("record carries print rules so it paginates", html.includes("@page"));
+
+check("record has a front page plus one page per child",
+  (html.match(/class="record-page/g) || []).length === recConfig.kids.length + 1);
+check("the front page comes first",
+  html.indexOf('class="record-page front-page"') < html.indexOf('class="record-page"'));
+check("front page names the record",
+  front.includes("Home education record") && front.includes("Year covered") &&
+  front.includes("2026") && front.includes("August 2026") &&
+  front.includes("Tuesday 1 September 2026"));
+check("front page names each child",
+  front.includes("Child 1") && front.includes("Child 2"));
+check("front page lists the programme with material and days",
+  front.includes("Beast Academy Level 3") && front.includes("Piano at home") &&
+  front.includes("Every day") && front.includes("material not named in the curriculum"));
+
+const weekdayFront = frontOf(buildMonthlyRecordHtml({
+  config: { kids: [{ id: "k", name: "Child", age: 6, tasks: [
+    { id: "t", label: "Maths", resource: "Book", recurrence: { type: "weekdays", days: [1, 2, 3, 4, 5] } },
+  ] }] },
+  completions: {}, monthKey: "2026-08", generatedOn: "2026-09-01",
+}));
+check("front page says Monday to Friday for a weekday task",
+  weekdayFront.includes("Monday to Friday"));
+check("front page shows the days count per child",
+  front.includes('<td class="num">2</td>') && front.includes('<td class="num">1</td>') &&
+  front.includes("Days of instruction in 2026 so far"));
+check("front page carries its footnote",
+  front.includes("This front page describes the weekly programme as it was set in the family's checklist app on the date this record was produced."));
+
+const bornHtml = buildMonthlyRecordHtml({
+  config: { kids: [{ id: "k", name: "Child", born: "2019-03-12", age: 5, tasks: [] }] },
+  completions: {}, monthKey: "2026-08", generatedOn: "2026-09-01",
+});
+const bornFront = frontOf(bornHtml);
+const bornKidPage = bornHtml.slice(bornHtml.indexOf('<section class="record-page', bornHtml.indexOf('<section class="record-page front-page">') + 1));
+check("front page computes the age from the birth date",
+  bornFront.includes('<td class="num">7</td>') && !bornFront.includes('<td class="num">5</td>'));
+check("the child's page uses the same computed age",
+  bornKidPage.includes("age 7") && !bornKidPage.includes("age 5"));
+
+const unknownAgeHtml = buildMonthlyRecordHtml({
+  config: { kids: [{ id: "k", name: "Mystery Child", tasks: [] }] },
+  completions: {}, monthKey: "2026-08", generatedOn: "2026-09-01",
+});
+const unknownAgeFront = frontOf(unknownAgeHtml);
+const unknownAgeKidPage = unknownAgeHtml.slice(unknownAgeHtml.indexOf('<section class="record-page', unknownAgeHtml.indexOf('<section class="record-page front-page">') + 1));
+check("front page says not recorded when no age is known",
+  unknownAgeFront.includes("not recorded") && unknownAgeKidPage.includes("Mystery Child") &&
+  !unknownAgeKidPage.includes("Mystery Child, age"));
+check("front page handles a child with no subjects",
+  unknownAgeFront.includes("No subjects are set in the app for this child."));
+
+const noKidsHtml = buildMonthlyRecordHtml({
+  config: { kids: [] }, completions: {}, monthKey: "2026-08", generatedOn: "2026-09-01",
+});
+check("front page handles no children",
+  frontOf(noKidsHtml).includes("No children are set in the app.") &&
+  (noKidsHtml.match(/class="record-page/g) || []).length === 1);
 
 // A resource title containing HTML must not break (or inject into) the page.
 const nastyConfig = { kids: [{ id: "k", name: "A<script>x</script>", age: 6,
@@ -306,6 +417,10 @@ const nastyHtml = buildMonthlyRecordHtml({
 });
 check("a name containing markup is escaped, not executed",
   !nastyHtml.includes("<script>x</script>") && nastyHtml.includes("&lt;script&gt;"));
+check("front page escapes markup in names and titles",
+  frontOf(nastyHtml).includes("&lt;script&gt;") &&
+  !frontOf(nastyHtml).includes("<script>x") &&
+  frontOf(nastyHtml).includes("Book &quot;&amp;&quot; &lt;i&gt;Co&lt;/i&gt;"));
 check("escapeHtml handles quotes and ampersands",
   escapeHtml('a&b"c<d') === "a&amp;b&quot;c&lt;d");
 
@@ -348,6 +463,8 @@ for (const kid of defaultConfig.kids) {
 }
 check("the seed still uses placeholder names, never real ones",
   defaultConfig.kids.every((k) => /^Child \d$/.test(k.name)));
+check("the seed carries no birth date",
+  defaultConfig.kids.every((k) => k.born === undefined));
 
 // ------------------------------------------------------------------------
 console.log("");

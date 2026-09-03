@@ -13,6 +13,10 @@
 //   parentPin : 4-digit string gating Parent Mode (default "1234").
 //   kids[]    : each kid has id / name / age / theme and a list of tasks.
 //   tasks[]   : id / label / icon (emoji) / resource / recurrence.
+//   born      : optional "YYYY-MM-DD", set on the device in Parent Mode and
+//               never in this file; when present the record computes the
+//               child's age from it. `age` is only the fallback for installs
+//               that never set it.
 //
 // `label` is the SUBJECT, short enough to sit under a ring ("Maths").
 // `resource` is the MATERIAL, named by title ("Beast Academy"). Only `label`

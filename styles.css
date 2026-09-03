@@ -400,3 +400,6 @@ html, body {
 .record-bar h2 { margin: 0; font-size: 1.05rem; }
 .record-bar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .record-frame { flex: 1; width: 100%; border: 0; background: #f4f2ee; }
+
+.kid-block-head .kid-born { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+.kid-block-head input.kid-born-input { border: 2px solid var(--line); border-radius: 10px; padding: 8px; min-height: 44px; font: inherit; }

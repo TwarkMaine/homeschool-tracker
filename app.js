@@ -396,6 +396,24 @@ function renderKidBlock(kid, kidIdx) {
   nameInput.addEventListener("input", () => { kid.name = nameInput.value; autosave(); });
   head.appendChild(nameInput);
 
+  const bornLabel = document.createElement("label");
+  bornLabel.className = "kid-born";
+  bornLabel.append("Born ");
+  const bornInput = document.createElement("input");
+  bornInput.type = "date";
+  bornInput.className = "kid-born-input";
+  bornInput.setAttribute("aria-label", "Date of birth for " + (kid.name || "this child"));
+  bornInput.value = kid.born || "";
+  const saveBorn = () => {
+    if (bornInput.value) kid.born = bornInput.value;
+    else delete kid.born;
+    autosave();
+  };
+  bornInput.addEventListener("input", saveBorn);
+  bornInput.addEventListener("change", saveBorn);
+  bornLabel.appendChild(bornInput);
+  head.appendChild(bornLabel);
+
   const delKid = document.createElement("button");
   delKid.className = "btn btn-danger";
   delKid.type = "button";

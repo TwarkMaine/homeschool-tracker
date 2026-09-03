@@ -207,6 +207,62 @@ const MONTH_NAMES = [
 const DAY_NAMES = [
   "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
 ];
+const PLURAL_DAY_NAMES = [
+  "Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays",
+];
+
+function validDateParts(date) {
+  if (typeof date !== "string") return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return null;
+  const parts = { year: +match[1], month: +match[2], day: +match[3] };
+  const roundTrip = new Date(parts.year, parts.month - 1, parts.day, 12, 0, 0);
+  return roundTrip.getFullYear() === parts.year &&
+    roundTrip.getMonth() + 1 === parts.month && roundTrip.getDate() === parts.day
+    ? parts
+    : null;
+}
+
+export function ageOn(born, date) {
+  const birth = validDateParts(born);
+  const on = validDateParts(date);
+  if (!birth || !on || born > date) return null;
+  const lastDay = new Date(on.year, birth.month, 0, 12, 0, 0).getDate();
+  const anniversaryDay = Math.min(birth.day, lastDay);
+  const beforeAnniversary = on.month < birth.month ||
+    (on.month === birth.month && on.day < anniversaryDay);
+  return on.year - birth.year - (beforeAnniversary ? 1 : 0);
+}
+
+export function kidAgeFor(kid, date) {
+  const fromBirth = ageOn(kid && kid.born, date);
+  if (fromBirth !== null) return fromBirth;
+  return kid && Number.isFinite(kid.age) ? kid.age : null;
+}
+
+export function describeRecurrence(recurrence) {
+  if (!recurrence || typeof recurrence !== "object") return "No days set";
+  if (recurrence.type === "daily") return "Every day";
+  if (recurrence.type === "weekly") {
+    return Number.isInteger(recurrence.day) && recurrence.day >= 0 && recurrence.day <= 6
+      ? PLURAL_DAY_NAMES[recurrence.day]
+      : "No days set";
+  }
+  if (recurrence.type !== "weekdays" || !Array.isArray(recurrence.days)) {
+    return "No days set";
+  }
+  const days = [...new Set(recurrence.days.filter(
+    (day) => Number.isInteger(day) && day >= 0 && day <= 6
+  ))].sort((a, b) => a - b);
+  if (days.length === 0) return "No days set";
+  if (days.length === 7) return "Every day";
+  if (days.length === 5 && days.every((day, index) => day === index + 1)) {
+    return "Monday to Friday";
+  }
+  if (days.length === 1) return PLURAL_DAY_NAMES[days[0]];
+  const names = days.map((day) => PLURAL_DAY_NAMES[day]);
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
 
 function parseMonthParts(monthKey) {
   const m = /^(\d{4})-(\d{2})$/.exec(monthKey);
@@ -386,6 +442,15 @@ const RECORD_CSS = `
   .resource { display: block; color: #44403c; }
   .unnamed, .removed { display: block; color: #78716c; font-style: italic; }
   .none { padding: 18px 0; color: #57534e; font-style: italic; }
+  .front-page h2 { font-size: 16px; margin: 14px 0 6px; }
+  .front-page .record-head .period { font-size: 22px; }
+  .front-page .facts { margin: 10px 0 12px; }
+  .front-page .facts div { padding: 5px 12px; }
+  .front-page th, .front-page td { padding: 5px 8px; }
+  .front-page thead th { font-size: 12px; }
+  .front-page .footnote { margin-top: 14px; padding-top: 8px; }
+  table.children td, table.programme td { font-size: 13px; }
+  td.num { text-align: right; white-space: nowrap; }
   .footnote {
     margin-top: 22px; padding-top: 12px; border-top: 1px solid #d6d3d1;
     font-size: 12.5px; line-height: 1.5; color: #44403c;
@@ -411,13 +476,69 @@ function renderItem(item) {
   return `<li><span class="subject">${escapeHtml(item.label)}</span>${resource}</li>`;
 }
 
+function renderFrontPage(config, monthKey, completions, generatedOn) {
+  const kids = (config && Array.isArray(config.kids)) ? config.kids : [];
+  const label = monthLabel(monthKey);
+  const lastDate = lastDateOfMonth(monthKey);
+  const { year } = parseMonthParts(monthKey);
+  const children = kids.length
+    ? `<table class="children">
+      <thead><tr><th scope="col">Name</th><th scope="col">Age at the end of ${escapeHtml(label)}</th><th scope="col">Days of instruction in ${escapeHtml(year)} so far</th></tr></thead>
+      <tbody>
+${kids.map((kid) => {
+  const age = kidAgeFor(kid, lastDate);
+  return `        <tr><td>${escapeHtml(kid.name || "Child")}</td>` +
+    `<td class="num">${escapeHtml(age === null ? "not recorded" : age)}</td>` +
+    `<td class="num">${escapeHtml(instructionDayCount(completions, kid.id, lastDate))}</td></tr>`;
+}).join("\n")}
+      </tbody>
+    </table>`
+    : `<p class="none">No children are set in the app.</p>`;
+  const programmes = kids.map((kid) => {
+    const tasks = Array.isArray(kid.tasks) ? kid.tasks : [];
+    const programme = tasks.length
+      ? `<table class="programme">
+      <thead><tr><th scope="col">Subject</th><th scope="col">Book or programme</th><th scope="col">Days</th></tr></thead>
+      <tbody>
+${tasks.map((task) => {
+  const material = task.resource
+    ? escapeHtml(task.resource)
+    : `<span class="unnamed">material not named in the curriculum</span>`;
+  return `        <tr><td>${escapeHtml(task.label || task.id)}</td>` +
+    `<td>${material}</td><td>${escapeHtml(describeRecurrence(task.recurrence))}</td></tr>`;
+}).join("\n")}
+      </tbody>
+    </table>`
+      : `<p class="none">No subjects are set in the app for this child.</p>`;
+    return `    <h2>${escapeHtml(kid.name || "Child")}'s weekly programme</h2>\n${programme}`;
+  }).join("\n");
+
+  return `  <section class="record-page front-page">
+    <header class="record-head">
+      <h1>Home education record</h1>
+      <p class="period">${escapeHtml(label)}</p>
+      <p class="who">Front page: the year, the children and the programme</p>
+    </header>
+    <dl class="facts">
+      <div><dt>Year covered</dt><dd>${escapeHtml(year)}</dd></div>
+      <div><dt>This file covers</dt><dd>${escapeHtml(label)}</dd></div>
+      <div><dt>This record was produced on</dt><dd>${escapeHtml(formatLongDate(generatedOn))}</dd></div>
+    </dl>
+    <h2>The children</h2>
+${children}
+${programmes}
+    <p class="footnote">This front page describes the weekly programme as it was set in the family's checklist app on the date this record was produced. The pages that follow record, for each child, what was actually marked complete on each day, in the wording used on that day. Each child's age is given as at the last day of the month covered.</p>
+  </section>`;
+}
+
 function renderKidPage(config, kid, monthKey, completions, generatedOn) {
   const rows = recordDaysForMonth(config, kid.id, monthKey, completions);
   const lastDate = lastDateOfMonth(monthKey);
   const { year } = parseMonthParts(monthKey);
   const yearToDate = instructionDayCount(completions, kid.id, lastDate);
-  const who = kid.age
-    ? `${escapeHtml(kid.name || "Child")}, age ${escapeHtml(String(kid.age))}`
+  const age = kidAgeFor(kid, lastDate);
+  const who = age !== null
+    ? `${escapeHtml(kid.name || "Child")}, age ${escapeHtml(String(age))}`
     : escapeHtml(kid.name || "Child");
 
   const body = rows.length
@@ -458,11 +579,12 @@ ${body}
 }
 
 // Build the complete, standalone, printable record for one month.
-// Returns an HTML document as a string, one page per child.
+// Returns an HTML document as a string, with a front page then one page per child.
 export function buildMonthlyRecordHtml({ config, completions, monthKey, generatedOn }) {
   const kids = (config && Array.isArray(config.kids)) ? config.kids : [];
-  const pages = kids
-    .map((kid) => renderKidPage(config, kid, monthKey, completions || {}, generatedOn))
+  const history = completions || {};
+  const pages = [renderFrontPage(config, monthKey, history, generatedOn), ...kids
+    .map((kid) => renderKidPage(config, kid, monthKey, history, generatedOn))]
     .join("\n");
   return `<!DOCTYPE html>
 <html lang="en">
