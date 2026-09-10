@@ -94,7 +94,7 @@
 
       <!-- The rings -->
       <div id="rings" class="rings" aria-label="Today's tasks"></div>
-      <p id="empty-note" class="empty-note" hidden>No tasks today — enjoy! 🌈</p>
+      <p id="empty-note" class="empty-note" hidden>No tasks today. Enjoy! 🌈</p>
     </section>
   </main>
 
@@ -105,7 +105,7 @@
       <p>Enter the 4-digit PIN.</p>
       <input id="pin-input" class="pin-input" type="password" inputmode="numeric" maxlength="4"
              pattern="[0-9]*" autocomplete="off" aria-label="PIN" />
-      <p id="pin-error" class="pin-error" hidden>Wrong PIN — try again.</p>
+      <p id="pin-error" class="pin-error" hidden>Wrong PIN. Try again.</p>
       <div class="dialog-actions">
         <button id="pin-cancel" type="button" class="btn btn-ghost">Cancel</button>
         <button id="pin-ok" type="button" class="btn btn-primary">Unlock</button>
@@ -127,6 +127,23 @@
         <h3>Monthly records</h3>
         <p class="parent-hint">A printable page per child, built from the taps already made. Save one whenever you like.</p>
         <div id="record-months" class="record-months"><!-- rendered by app.js --></div>
+      </div>
+
+      <div class="parent-sync">
+        <h3>Send a copy to our home computer</h3>
+        <p class="parent-hint">Optional. Leave the address empty and nothing ever leaves this iPad. With an address set, the app quietly sends its ticks and curriculum there after each tap and each time it is opened.</p>
+        <label class="sync-field">
+          <span>Address</span>
+          <input id="sync-address" type="url" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="empty means send nothing" />
+        </label>
+        <label class="sync-field">
+          <span>Token</span>
+          <input id="sync-token" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="the same word set on the home computer" />
+        </label>
+        <div class="sync-row">
+          <button id="sync-now" type="button" class="btn btn-secondary">Send now</button>
+          <span id="sync-status" class="sync-status" aria-live="polite"></span>
+        </div>
       </div>
 
       <div class="parent-tools">

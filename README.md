@@ -4,8 +4,17 @@ A tiny, local, no-build-step PWA. Each kid sees today's tasks as big "rings,"
 taps to complete them, and when every ring is closed a **Free time unlocked**
 banner appears. A PIN-gated Parent Mode edits the curriculum.
 
-No framework, no bundler, no npm, no accounts, no cloud, no network writes.
-Plain HTML/CSS/JS that will still run in five years by just opening the files.
+No framework, no bundler, no npm, no accounts, no cloud. Plain HTML/CSS/JS
+that will still run in five years by just opening the files.
+
+**Nothing leaves the device unless you type an address.** Parent Mode has an
+optional "Send a copy to our home computer" field. It is empty by default, and
+with it empty the app makes no network calls at all. If you do type an address
+(and a token you set on the receiving computer), the app posts its own backup
+JSON there after each tap and each time it is opened, so a computer of yours can
+keep the record without anyone exporting anything. That is the only file in the
+app allowed to call out (`sync.js`), it carries no address of its own, and the
+tests fail if any other file ever gains one.
 
 ## Run it locally
 
@@ -64,6 +73,7 @@ All assertions print `PASS`/`FAIL`; the process exits non-zero on any failure.
 | `styles.css` | Calm, large-touch-target iPad styling |
 | `logic.js` | **Pure** module: recurrence, completion, streak, (de)serialize |
 | `app.js` | DOM + IndexedDB wiring, parent mode, backup, midnight rollover |
+| `sync.js` | The one file allowed to call out: posts the backup JSON to the address you typed, if any |
 | `config.default.js` | Seed curriculum (editable data) |
 | `manifest.webmanifest` + `service-worker.js` | PWA install + offline shell |
 | `tests.mjs` | `node tests.mjs` test harness |

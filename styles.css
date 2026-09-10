@@ -356,6 +356,23 @@ html, body {
 }
 .record-month-name { font-size: 0.95rem; }
 
+/* Parent mode: send a copy home (Phase 4). Two fields, one status line. */
+.parent-sync { margin-top: 22px; padding-top: 14px; border-top: 2px solid var(--line); }
+.parent-sync h3 { margin: 0; font-size: 1.05rem; }
+.sync-field { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.sync-field span { min-width: 64px; color: var(--ink-soft); font-size: 0.85rem; }
+.sync-field input {
+  flex: 1;
+  min-width: 0;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  min-height: 44px;
+  font: inherit;
+}
+.sync-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.sync-status { color: var(--ink-soft); font-size: 0.9rem; }
+
 /* Curriculum editor: the material sits on its own line under the subject,
    because a book title needs far more room than a subject name. */
 /* A task is now two lines (subject, then material), so the remove button is

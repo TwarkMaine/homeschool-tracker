@@ -29,6 +29,7 @@ import {
   escapeHtml,
 } from "./logic.js";
 import { defaultConfig } from "./config.default.js";
+import { createSync, normaliseAddress, TOKEN_HEADER } from "./sync.js";
 
 let passed = 0;
 let failed = 0;
@@ -431,28 +432,155 @@ check("record contains no script tag", !/<script/i.test(html));
 check("record loads nothing external", !/\bsrc\s*=|<link\b|@import|url\s*\(/i.test(html));
 check("record contains no URL of any kind", !/https?:\/\//i.test(html));
 
-// --- HARD CONSTRAINT: the app has no network write path -------------------
-// Enforced by the build, not by a promise. The app may never send a child's
-// record anywhere. The service worker is exempt: it fetches the app's OWN
-// files from its own origin to work offline, and is checked separately.
+// ========================================================================
+// PHASE 4 — the app sends its own state home, to an address a parent typed
+// ========================================================================
+
+// --- HARD CONSTRAINT: exactly one file may make a network call ------------
+// Until 2026-09-10 the rule was "no network write path, ever". Now sync.js is
+// the one file allowed to call out, and only to an address read from device
+// storage. Every other file must still fail this scan the day it gains a
+// call, and sync.js must never carry a host of its own. Enforced by the
+// build, not by a promise. The service worker is exempt from the call scan:
+// it fetches the app's OWN files from its own origin to work offline.
 const appSource = readFileSync(new URL("./app.js", import.meta.url), "utf8");
 const logicSource = readFileSync(new URL("./logic.js", import.meta.url), "utf8");
 const htmlSource = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+const syncSource = readFileSync(new URL("./sync.js", import.meta.url), "utf8");
+const seedSource = readFileSync(new URL("./config.default.js", import.meta.url), "utf8");
+const swSource = readFileSync(new URL("./service-worker.js", import.meta.url), "utf8");
 const OUTBOUND = /\bfetch\s*\(|XMLHttpRequest|sendBeacon|new\s+WebSocket|new\s+EventSource|navigator\.connection/;
+const stripComments = (s) => s.replace(/^\s*\/\/.*$/gm, "");
 check("app.js has no way to send anything", !OUTBOUND.test(appSource));
 check("logic.js has no way to send anything", !OUTBOUND.test(logicSource));
 check("index.html has no way to send anything", !OUTBOUND.test(htmlSource));
-const swSource = readFileSync(new URL("./service-worker.js", import.meta.url), "utf8");
+check("config.default.js has no way to send anything", !OUTBOUND.test(seedSource));
+check("sync.js is the one file that can send (so the scan is live)", OUTBOUND.test(syncSource));
+check("sync.js reads the address from settings, not from itself",
+  /getSettings\s*\(\)/.test(syncSource) && /normaliseAddress\(\s*settings\.address\s*\)/.test(syncSource));
+check("sync.js carries no host, address or scheme of its own",
+  !/:\/\//.test(stripComments(syncSource)) && !/\b[a-z0-9-]+\.(ts\.net|local|com|io|net|org|dev)\b/i.test(stripComments(syncSource)));
+check("sync.js imports nothing", !/^\s*import\s/m.test(syncSource));
 check("the service worker never names an outside host",
-  !/https?:\/\/(?!www\.w3\.org)/i.test(swSource.replace(/^\s*\/\/.*$/gm, "")));
+  !/https?:\/\/(?!www\.w3\.org)/i.test(stripComments(swSource)));
 check("no source file embeds a remote host",
-  ![appSource, logicSource, htmlSource].some((s) =>
-    /https?:\/\/(?!www\.w3\.org)/i.test(s.replace(/^\s*\/\/.*$/gm, ""))));
+  ![appSource, logicSource, htmlSource, syncSource, seedSource].some((s) =>
+    /https?:\/\/(?!www\.w3\.org)/i.test(stripComments(s))));
+check("the public seed carries no address and no token",
+  !/\b(address|token|sync)\b/i.test(stripComments(seedSource)) &&
+  defaultConfig.sync === undefined && defaultConfig.address === undefined && defaultConfig.token === undefined);
+check("the service worker caches sync.js with the shell", swSource.includes('"./sync.js"'));
 
 // --- HARD CONSTRAINT: no dependencies, no build step ---------------------
 check("logic.js imports nothing", !/^\s*import\s/m.test(logicSource));
 check("app.js imports only local files",
   [...appSource.matchAll(/from\s+["']([^"']+)["']/g)].every((m) => m[1].startsWith("./")));
+
+// --- sync.js behaviour, driven with a fake fetch -------------------------
+check("normaliseAddress trims", normaliseAddress("  https://x  ") === "https://x");
+check("normaliseAddress of nothing is empty", normaliseAddress(undefined) === "" && normaliseAddress("   ") === "");
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function fakeFetch(behaviour) {
+  const calls = [];
+  const impl = async (url, init) => {
+    calls.push({ url, init });
+    if (behaviour === "throw") throw new Error("network down");
+    if (behaviour === "reject") return { ok: false, status: 403 };
+    return { ok: true, status: 204 };
+  };
+  return { calls, impl };
+}
+const payload = serializeState({ config: recConfig, completions: rec });
+
+// No address: nothing is ever sent, whatever else happens.
+{
+  const f = fakeFetch("ok");
+  let sentAt = null;
+  const s = createSync({ getSettings: () => ({ address: "", token: "abc" }), getPayload: () => payload,
+    onSent: (t) => { sentAt = t; }, fetchImpl: f.impl, isOnline: () => true, delayMs: 5 });
+  const r = await s.sendNow();
+  s.scheduleSend(); await sleep(20);
+  check("empty address: sendNow sends nothing", r === false && f.calls.length === 0);
+  check("empty address: scheduled send sends nothing", f.calls.length === 0 && sentAt === null);
+}
+// Address set: one POST, token in the header, body is the export JSON.
+{
+  const f = fakeFetch("ok");
+  let sentAt = null;
+  const s = createSync({ getSettings: () => ({ address: " https://home.example/ipad ", token: " secret-word " }),
+    getPayload: () => payload, onSent: (t) => { sentAt = t; }, fetchImpl: f.impl, isOnline: () => true,
+    now: () => "2026-09-10T14:32:00.000Z", delayMs: 5 });
+  const r = await s.sendNow();
+  check("with an address: sendNow reports success on 2xx", r === true && f.calls.length === 1);
+  check("the address is used trimmed", f.calls[0].url === "https://home.example/ipad");
+  check("it is a POST with no cookies", f.calls[0].init.method === "POST" && f.calls[0].init.credentials === "omit");
+  check("the token rides in the header, trimmed", f.calls[0].init.headers[TOKEN_HEADER] === "secret-word");
+  check("the body is JSON", f.calls[0].init.headers["Content-Type"] === "application/json");
+  const body = JSON.parse(f.calls[0].init.body);
+  check("the body is the same shape the Export button writes",
+    body.version === 1 && body.config && body.completions && f.calls[0].init.body === payload);
+  check("the body never carries the token", !f.calls[0].init.body.includes("secret-word"));
+  check("success records the time", sentAt === "2026-09-10T14:32:00.000Z");
+}
+// A burst of taps is one send.
+{
+  const f = fakeFetch("ok");
+  const s = createSync({ getSettings: () => ({ address: "https://home.example/ipad", token: "t" }),
+    getPayload: () => payload, fetchImpl: f.impl, isOnline: () => true, delayMs: 10 });
+  s.scheduleSend(); s.scheduleSend(); s.scheduleSend();
+  check("a scheduled send is pending", s.pending() === true);
+  await sleep(40);
+  check("three taps inside the window make one send", f.calls.length === 1);
+  check("nothing is pending afterwards", s.pending() === false);
+}
+// Failure is silent: a thrown fetch or a refused token never throws and never
+// records a time.
+{
+  for (const mode of ["throw", "reject"]) {
+    const f = fakeFetch(mode);
+    let sentAt = null;
+    const s = createSync({ getSettings: () => ({ address: "https://home.example/ipad", token: "t" }),
+      getPayload: () => payload, onSent: (t) => { sentAt = t; }, fetchImpl: f.impl, isOnline: () => true, delayMs: 5 });
+    let threw = false;
+    let r;
+    try { r = await s.sendNow(); } catch (e) { threw = true; }
+    check(`a ${mode === "throw" ? "dead network" : "refused send"} is silent`, !threw && r === false && sentAt === null);
+  }
+}
+// Offline: nothing is attempted.
+{
+  const f = fakeFetch("ok");
+  const s = createSync({ getSettings: () => ({ address: "https://home.example/ipad", token: "t" }),
+    getPayload: () => payload, fetchImpl: f.impl, isOnline: () => false, delayMs: 5 });
+  const r = await s.sendNow();
+  check("offline: nothing is attempted", r === false && f.calls.length === 0);
+}
+// A tap during a send in flight is not lost: it goes again after landing.
+{
+  let release;
+  const gate = new Promise((res) => { release = res; });
+  const calls = [];
+  const slowFetch = async (url, init) => { calls.push(init.body); if (calls.length === 1) await gate; return { ok: true }; };
+  let version = 0;
+  const s = createSync({ getSettings: () => ({ address: "https://home.example/ipad", token: "t" }),
+    getPayload: () => String(++version), fetchImpl: slowFetch, isOnline: () => true, delayMs: 5 });
+  const first = s.sendNow();
+  const second = await s.sendNow();
+  check("a send during a send is not started twice", second === false && calls.length === 1);
+  release();
+  await first;
+  await sleep(30);
+  check("but the newer state goes out once the first lands", calls.length === 2 && calls[1] === "2");
+}
+// The app wires the sender to the tap, the open, and the parent panel.
+check("app.js sends after a tick", /await saveCompletions\(\);\s*renderToday\(\);\s*sync\.scheduleSend\(\);/.test(appSource));
+check("app.js sends on every open", /renderAll\(\);\s*\/\/[^\n]*\n\s*sync\.scheduleSend\(\);/.test(appSource));
+check("app.js keeps the address out of the config and the export",
+  /kvGet\("sync"\)/.test(appSource) && /kvSet\("sync"/.test(appSource) &&
+  !/state\.config\.(sync|address|token)/.test(appSource));
+check("Parent Mode shows the last send", htmlSource.includes('id="sync-status"') && appSource.includes("Last sent home"));
+check("the address field ships empty", /id="sync-address"[^>]*\/>/.test(htmlSource) && !/id="sync-address"[^>]*value=/.test(htmlSource));
 
 // --- PHASE 3a: every seeded task names its material ----------------------
 for (const kid of defaultConfig.kids) {

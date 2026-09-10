@@ -12,11 +12,13 @@ import {
   monthKeyOf,
   previousMonthKey,
   monthLabel,
+  formatLongDate,
   monthHasRecord,
   buildMonthlyRecordHtml,
   recordFileName,
 } from "./logic.js";
 import { defaultConfig } from "./config.default.js";
+import { createSync, normaliseAddress } from "./sync.js";
 
 // ---------------------------------------------------------------------------
 // IndexedDB (tiny key/value store; one object store "kv")
@@ -222,6 +224,10 @@ const els = {
   recordPrint: $("record-print"),
   recordDownload: $("record-download"),
   recordClose: $("record-close"),
+  syncAddress: $("sync-address"),
+  syncToken: $("sync-token"),
+  syncNow: $("sync-now"),
+  syncStatus: $("sync-status"),
 };
 
 // ---------------------------------------------------------------------------
@@ -303,6 +309,7 @@ async function onToggle(kidId, taskId) {
   state.completions = toggleCompletion(state.completions, kidId, state.today, taskId, snapshot);
   await saveCompletions();
   renderToday();
+  sync.scheduleSend();
 }
 
 function renderAll() {
@@ -322,7 +329,11 @@ function checkRollover() {
   }
 }
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) checkRollover();
+  if (!document.hidden) {
+    checkRollover();
+    // Coming back to the app from the home screen counts as an open.
+    sync.scheduleSend();
+  }
 });
 window.addEventListener("focus", checkRollover);
 
@@ -360,6 +371,7 @@ const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 function openParentPanel() {
   renderParentPanel();
   renderRecordMonths();
+  renderSyncPanel();
   els.parentOverlay.hidden = false;
 }
 els.parentClose.addEventListener("click", async () => {
@@ -370,6 +382,8 @@ els.parentClose.addEventListener("click", async () => {
     state.activeKidId = state.config.kids[0] ? state.config.kids[0].id : null;
   }
   renderAll();
+  // The curriculum may have changed; the home computer should see it.
+  sync.scheduleSend();
 });
 
 function uid(prefix) {
@@ -774,6 +788,7 @@ els.importFile.addEventListener("change", async () => {
     state.activeKidId = state.config.kids[0] ? state.config.kids[0].id : null;
     renderParentPanel();
     renderAll();
+    sync.scheduleSend();
     alert("Backup imported. 🎉");
   } catch (e) {
     alert("Could not read that file: " + e.message);
@@ -781,6 +796,96 @@ els.importFile.addEventListener("change", async () => {
     els.importFile.value = "";
   }
 });
+
+// ---------------------------------------------------------------------------
+// Send a copy home (Phase 4)
+//
+// The address and token live in their own storage key, "sync", beside the
+// config, never inside it. So the Export backup carries neither, the JSON that
+// is sent carries neither, and the public seed cannot carry them at all. An
+// install with the address empty sends nothing, ever.
+// ---------------------------------------------------------------------------
+const syncSettings = { address: "", token: "", lastSentAt: "" };
+
+async function loadSyncSettings() {
+  const v = await kvGet("sync");
+  if (v && typeof v === "object") {
+    syncSettings.address = typeof v.address === "string" ? v.address : "";
+    syncSettings.token = typeof v.token === "string" ? v.token : "";
+    syncSettings.lastSentAt = typeof v.lastSentAt === "string" ? v.lastSentAt : "";
+  }
+}
+async function saveSyncSettings() {
+  await kvSet("sync", { ...syncSettings });
+}
+
+const sync = createSync({
+  getSettings: () => ({ address: syncSettings.address, token: syncSettings.token }),
+  getPayload: () => serializeState({ config: state.config, completions: state.completions }),
+  onSent: async (isoTime) => {
+    syncSettings.lastSentAt = isoTime;
+    await saveSyncSettings();
+    renderSyncStatus();
+  },
+});
+
+// "Thursday 10 September 2026, 14:32" in the device's own time zone.
+function formatSentTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${formatLongDate(`${y}-${mo}-${da}`)}, ${hh}:${mm}`;
+}
+
+function renderSyncStatus() {
+  if (!els.syncStatus) return;
+  if (!normaliseAddress(syncSettings.address)) {
+    els.syncStatus.textContent = "Off. Nothing leaves this iPad until an address is typed above.";
+    return;
+  }
+  els.syncStatus.textContent = syncSettings.lastSentAt
+    ? `Last sent home: ${formatSentTime(syncSettings.lastSentAt)}`
+    : "Last sent home: never yet";
+}
+
+function renderSyncPanel() {
+  if (!els.syncAddress) return;
+  els.syncAddress.value = syncSettings.address;
+  els.syncToken.value = syncSettings.token;
+  renderSyncStatus();
+}
+
+let syncSaveTimer = null;
+function onSyncFieldInput() {
+  syncSettings.address = els.syncAddress.value;
+  syncSettings.token = els.syncToken.value;
+  clearTimeout(syncSaveTimer);
+  syncSaveTimer = setTimeout(() => { saveSyncSettings(); }, 250);
+  renderSyncStatus();
+}
+if (els.syncAddress) {
+  els.syncAddress.addEventListener("input", onSyncFieldInput);
+  els.syncToken.addEventListener("input", onSyncFieldInput);
+  els.syncNow.addEventListener("click", async () => {
+    // The one-time setup needs a way to see it work without waiting for a tap.
+    await saveSyncSettings();
+    if (!normaliseAddress(syncSettings.address)) {
+      renderSyncStatus();
+      return;
+    }
+    els.syncStatus.textContent = "Sending…";
+    const ok = await sync.sendNow();
+    if (!ok) {
+      els.syncStatus.textContent =
+        "Could not reach the home computer just now. Check the address, the token, and that this iPad is on the family network." +
+        (syncSettings.lastSentAt ? ` Last sent home: ${formatSentTime(syncSettings.lastSentAt)}` : "");
+    }
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Misc
@@ -824,6 +929,7 @@ window.addEventListener("unhandledrejection", (e) =>
     await requestPersistence();
     await loadState();
     await loadSavedMonths();
+    await loadSyncSettings();
     // If storage never came up, run from the seed so the app still works.
     if (!state.config) {
       state.config = JSON.parse(JSON.stringify(defaultConfig));
@@ -831,6 +937,8 @@ window.addEventListener("unhandledrejection", (e) =>
       state.activeKidId = state.config.kids[0] ? state.config.kids[0].id : null;
     }
     renderAll();
+    // Every open sends home, if there is a home to send to.
+    sync.scheduleSend();
     // Re-affirm persistence now that data exists (some browsers only grant it
     // once there's something to persist).
     requestPersistence();
