@@ -204,6 +204,27 @@ html, body {
 }
 .ring.done .ring-label { color: var(--ink-soft); text-decoration: line-through; }
 
+/* A times-a-week task: dots for the week, and a dashed ring while it is still
+   a choice today rather than a must. */
+.ring.optional .ring-circle { border-style: dashed; }
+.ring-week {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: -6px;
+}
+.ring-pips { display: flex; gap: 6px; }
+.pip {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--good);
+  background: transparent;
+}
+.pip.on { background: var(--good); }
+.ring-week-text { font-size: 0.95rem; font-weight: 600; color: var(--ink-soft); }
+
 .empty-note { text-align: center; font-size: 1.3rem; color: var(--ink-soft); margin-top: 40px; }
 
 /* ---------------- Overlays / dialogs ---------------- */
@@ -303,6 +324,12 @@ html, body {
   cursor: pointer;
 }
 .weekday-picker input { width: 28px; height: 28px; }
+.weekday-picker label.times-picker {
+  flex-direction: row;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+.task-row select.rec-times { min-width: 64px; }
 .row-tools { margin-left: auto; }
 
 .add-task-btn { margin-top: 10px; }

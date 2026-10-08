@@ -44,7 +44,8 @@ in **Parent Mode**; they're stored only on that device, never in this repo.
 
 On first run the app copies that seed into IndexedDB; after that, edits made in
 **Parent Mode** are what's used. Each task has an emoji icon, a label, and a
-recurrence: `daily`, `weekdays` (a set of weekdays), or `weekly` (one weekday).
+recurrence: `daily`, `weekdays` (a set of weekdays), `weekly` (one weekday), or
+`perWeek` (a number of times a week, on any days, Monday to Sunday).
 
 ## Parent Mode
 

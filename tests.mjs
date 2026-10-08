@@ -5,6 +5,9 @@
 import { readFileSync } from "node:fs";
 import {
   tasksForDay,
+  requiredTasksForDay,
+  weekProgress,
+  weekStart,
   isDayComplete,
   currentStreak,
   toggleCompletion,
@@ -212,6 +215,168 @@ check("describeRecurrence missing recurrence",
   describeRecurrence(undefined) === "No days set");
 check("describeRecurrence invalid weekly day",
   describeRecurrence({ type: "weekly", day: 9 }) === "No days set");
+
+check("describeRecurrence three times a week",
+  describeRecurrence({ type: "perWeek", times: 3 }) === "3 times a week");
+check("describeRecurrence once a week",
+  describeRecurrence({ type: "perWeek", times: 1 }) === "Once a week");
+check("describeRecurrence twice a week",
+  describeRecurrence({ type: "perWeek", times: 2 }) === "Twice a week");
+check("describeRecurrence seven times a week is every day",
+  describeRecurrence({ type: "perWeek", times: 7 }) === "Every day");
+check("describeRecurrence times a week with no number",
+  describeRecurrence({ type: "perWeek" }) === "No days set");
+check("describeRecurrence times a week with zero",
+  describeRecurrence({ type: "perWeek", times: 0 }) === "No days set");
+
+// ========================================================================
+// TIMES A WEEK — a weekly target instead of fixed days
+// ========================================================================
+// The week under test is Monday 15 to Sunday 21 June 2026 (anchors above).
+const PREV_SUN = "2026-06-14";
+const NEXT_MON = "2026-06-22";
+const WEEK = [MON, TUE, WED, THU, FRI, SAT, SUN];
+
+check("weekStart of a Monday is itself", weekStart(MON) === MON);
+check("weekStart of a Thursday is that Monday", weekStart(THU) === MON);
+check("weekStart of a Sunday is the Monday before", weekStart(SUN) === MON);
+check("weekStart of the next Monday starts a new week", weekStart(NEXT_MON) === NEXT_MON);
+check("weekStart crosses a month boundary", weekStart("2026-07-01") === "2026-06-29");
+check("weekStart crosses a year boundary", weekStart("2027-01-01") === "2026-12-28");
+
+const pwConfig = { kids: [{ id: "kid", name: "Kid", tasks: [
+  { id: "t-read", label: "Reading", recurrence: { type: "daily" } },
+  { id: "t-write", label: "Writing", recurrence: { type: "perWeek", times: 3 } },
+] }] };
+const writeTask = pwConfig.kids[0].tasks[1];
+const done = (c, date, taskId) => toggleCompletion(c, "kid", date, taskId);
+const ids = (tasks) => tasks.map((t) => t.id);
+
+check("weekProgress is null for a fixed-day task",
+  weekProgress(pwConfig.kids[0].tasks[0], "kid", MON, {}) === null);
+eq("weekProgress on an untouched Monday",
+  weekProgress(writeTask, "kid", MON, {}),
+  { times: 3, done: 0, doneBefore: 0, daysLeft: 7, onOffer: true, dueToday: false });
+
+// Shows every day of the week, Monday to Sunday, while the target is unmet.
+check("an unmet times-a-week task shows on all seven days",
+  WEEK.every((d) => ids(tasksForDay(pwConfig, "kid", d, {})).includes("t-write")));
+check("without completions passed it still shows (old call shape)",
+  ids(tasksForDay(pwConfig, "kid", SAT)).includes("t-write"));
+
+// With spare days it is on offer but not required.
+eq("Monday: only the daily task is required",
+  ids(requiredTasksForDay(pwConfig, "kid", MON, {})), ["t-read"]);
+check("Monday: the day completes without the times-a-week task",
+  isDayComplete(pwConfig, "kid", MON, done({}, MON, "t-read")) === true);
+check("Monday: a missed daily task still blocks the day",
+  isDayComplete(pwConfig, "kid", MON, done({}, MON, "t-write")) === false);
+
+// The due-today rule: required once the days left equal the times still needed.
+// Nothing done all week, 3 needed: Thursday has 4 days left, Friday has 3.
+check("nothing done: Thursday still has a spare day",
+  weekProgress(writeTask, "kid", THU, {}).dueToday === false);
+check("nothing done: Friday is the first day it is due",
+  weekProgress(writeTask, "kid", FRI, {}).dueToday === true);
+check("nothing done: Friday is not complete on the daily task alone",
+  isDayComplete(pwConfig, "kid", FRI, done({}, FRI, "t-read")) === false);
+check("nothing done: Friday completes once both are ticked",
+  isDayComplete(pwConfig, "kid", FRI, done(done({}, FRI, "t-read"), FRI, "t-write")) === true);
+
+// One done on Tuesday, 2 still needed: due from Saturday (2 days left).
+let pw = done({}, TUE, "t-write");
+check("one done: Friday is not yet due", weekProgress(writeTask, "kid", FRI, pw).dueToday === false);
+check("one done: Saturday is due", weekProgress(writeTask, "kid", SAT, pw).dueToday === true);
+eq("one done: Saturday's progress reads 1 of 3",
+  [weekProgress(writeTask, "kid", SAT, pw).done, weekProgress(writeTask, "kid", SAT, pw).times], [1, 3]);
+
+// Ticking today does not change whether today required it, and counts at once.
+const friBoth = done({}, FRI, "t-write");
+check("ticking on a due day keeps the day marked as due",
+  weekProgress(writeTask, "kid", FRI, friBoth).dueToday === true);
+check("ticking today counts in the progress straight away",
+  weekProgress(writeTask, "kid", FRI, friBoth).done === 1);
+
+// Target met: the ring stays on the day it was met, then is gone for the week.
+pw = done(done(done({}, MON, "t-write"), TUE, "t-write"), WED, "t-write");
+check("the day the target is met still shows the task, as done",
+  ids(tasksForDay(pwConfig, "kid", WED, pw)).includes("t-write") &&
+  weekProgress(writeTask, "kid", WED, pw).done === 3);
+check("the task disappears for the rest of the week once met",
+  [THU, FRI, SAT, SUN].every((d) => !ids(tasksForDay(pwConfig, "kid", d, pw)).includes("t-write")));
+check("a met week never makes a later day due",
+  [THU, FRI, SAT, SUN].every((d) => weekProgress(writeTask, "kid", d, pw).dueToday === false));
+check("unticking the last one brings the task back the next day",
+  ids(tasksForDay(pwConfig, "kid", THU, done(pw, WED, "t-write"))).includes("t-write"));
+
+// Week boundaries: Sunday belongs to the week before, Monday starts from zero.
+check("last week's ticks do not count this week",
+  weekProgress(writeTask, "kid", MON, done({}, PREV_SUN, "t-write")).done === 0);
+check("a tick on Sunday counts for the week that ends that day",
+  weekProgress(writeTask, "kid", SUN, done({}, SUN, "t-write")).done === 1);
+check("a met week resets on the next Monday",
+  ids(tasksForDay(pwConfig, "kid", NEXT_MON, pw)).includes("t-write") &&
+  weekProgress(writeTask, "kid", NEXT_MON, pw).done === 0);
+check("next week's ticks do not count this week",
+  weekProgress(writeTask, "kid", SUN, done({}, NEXT_MON, "t-write")).done === 0);
+
+// Edges of the number itself.
+const timesTask = (n) => ({ id: "t", recurrence: { type: "perWeek", times: n } });
+check("seven times a week is due every day, like a daily task",
+  WEEK.every((d) => weekProgress(timesTask(7), "kid", d, {}).dueToday === true));
+check("once a week is due only on Sunday if left that long",
+  WEEK.map((d) => weekProgress(timesTask(1), "kid", d, {}).dueToday).join() ===
+  "false,false,false,false,false,false,true");
+check("a number above seven is treated as seven", weekProgress(timesTask(12), "kid", MON, {}).times === 7);
+check("a missing or broken number means the task never shows",
+  [undefined, 0, -2, 2.5, "3"].every((n) =>
+    tasksForDay({ kids: [{ id: "kid", tasks: [timesTask(n)] }] }, "kid", MON, {}).length === 0));
+
+// The streak: a skipped times-a-week task with spare days does not break it,
+// and one that ran out of days does.
+function readingAllWeek(c) {
+  let out = c;
+  for (const d of WEEK) out = done(out, d, "t-read");
+  return out;
+}
+let streakPw = readingAllWeek({});
+for (const d of [MON, WED, FRI]) streakPw = done(streakPw, d, "t-write");
+check("a week with the target met on any three days is an unbroken streak",
+  currentStreak(pwConfig, "kid", NEXT_MON, streakPw) === 7);
+// Reading every day but writing never: Mon-Thu count, Friday is where it
+// became due and was missed, so looking back from next Monday the run is 0
+// and looking back from Friday it is the four days before.
+check("days with spare days left still count toward the streak",
+  currentStreak(pwConfig, "kid", FRI, readingAllWeek({})) === 4);
+check("a week that missed its target breaks the streak at the first due day",
+  currentStreak(pwConfig, "kid", NEXT_MON, readingAllWeek({})) === 0);
+
+// Saved configs from before this existed behave exactly as they did.
+const oldShape = JSON.parse(JSON.stringify(config));
+eq("an old config shows the same tasks with or without completions passed",
+  WEEK.map((d) => ids(tasksForDay(oldShape, "kid", d, streakComps))),
+  WEEK.map((d) => ids(tasksForDay(oldShape, "kid", d))));
+eq("for an old config every shown task is required",
+  WEEK.map((d) => ids(requiredTasksForDay(oldShape, "kid", d, {}))),
+  WEEK.map((d) => ids(tasksForDay(oldShape, "kid", d))));
+
+// The printed front page says it in words.
+check("front page describes a times-a-week task in words",
+  frontOf(buildMonthlyRecordHtml({
+    config: pwConfig, completions: {}, monthKey: "2026-08", generatedOn: "2026-09-01",
+  })).includes("<td>3 times a week</td>"));
+// The app and the seed use it.
+{
+  const appJs = readFileSync(new URL("./app.js", import.meta.url), "utf8");
+  check("the Today screen passes completions when listing tasks",
+    /tasksForDay\(state\.config, kid\.id, state\.today, state\.completions\)/.test(appJs));
+  check("the Today screen shows N of M this week",
+    appJs.includes("of ${week.times} this week"));
+  check("Parent Mode offers times a week with a 1 to 7 picker",
+    appJs.includes('["perWeek", "Times a week"]') && /for \(let n = 1; n <= 7; n\+\+\)/.test(appJs));
+}
+check("the seed gives at least one subject a weekly target",
+  defaultConfig.kids.every((k) => k.tasks.some((t) => t.recurrence.type === "perWeek")));
 
 // --- A config carrying resource titles ----------------------------------
 const recConfig = {

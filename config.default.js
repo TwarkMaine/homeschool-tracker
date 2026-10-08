@@ -34,6 +34,11 @@
 //   { type: "daily" }                       fires every day
 //   { type: "weekdays", days: [1,2,3,4,5] } fires on listed weekdays
 //   { type: "weekly",   day: 3 }            fires on one weekday
+//   { type: "perWeek",  times: 3 }          3 times a week, on any days
+//
+// A perWeek task has no fixed days. It is on offer every day, Monday to
+// Sunday, until it has been done that many times, then it is gone until next
+// Monday. It only becomes a must on the day there are no spare days left.
 //
 // Weekday numbers: 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
 // Mon–Fri is [1,2,3,4,5].
@@ -53,11 +58,32 @@ export const defaultConfig = {
       theme: "violet",
       tasks: [
         {
-          id: "a-music",
-          label: "Music",
-          icon: "🎵",
-          resource: "One-to-one piano tuition at home, with a termly goal",
+          id: "a-beast",
+          label: "Maths",
+          icon: "🧮",
+          resource: "Beast Academy (level set by the Beast Academy placement test), worked out with pen and paper",
           recurrence: { type: "weekdays", days: [1, 2, 3, 4, 5] }, // Mon–Fri
+        },
+        {
+          id: "a-bio",
+          label: "Biology",
+          icon: "🔬",
+          resource: "Khan Academy Biology",
+          recurrence: { type: "perWeek", times: 3 },
+        },
+        {
+          id: "a-ear",
+          label: "Ear training",
+          icon: "👂",
+          resource: "Ear training exercises, ten minutes",
+          recurrence: { type: "daily" },
+        },
+        {
+          id: "a-piano",
+          label: "Piano",
+          icon: "🎹",
+          resource: "One-to-one piano tuition at home, with a termly goal",
+          recurrence: { type: "daily" },
         },
         {
           id: "a-booktalk",
@@ -67,18 +93,11 @@ export const defaultConfig = {
           recurrence: { type: "daily" },
         },
         {
-          id: "a-beast",
-          label: "Maths",
-          icon: "🧮",
-          resource: "Beast Academy (level set by the Beast Academy placement test)",
-          recurrence: { type: "weekdays", days: [1, 2, 3, 4, 5] }, // Mon–Fri
-        },
-        {
-          id: "a-bio",
-          label: "Biology",
-          icon: "🔬",
-          resource: "Khan Academy Biology",
-          recurrence: { type: "weekdays", days: [1, 2, 3, 4, 5] }, // Mon–Fri
+          id: "a-writing",
+          label: "Writing",
+          icon: "✏️",
+          resource: "A short piece written by hand about the book being read",
+          recurrence: { type: "perWeek", times: 3 },
         },
       ],
     },
@@ -95,28 +114,31 @@ export const defaultConfig = {
       theme: "teal",
       tasks: [
         {
-          id: "b-phonics",
-          label: "Phonics",
-          icon: "🔤",
-          // Deliberately describes the method rather than naming a programme:
-          // the choice between Jolly Phonics, Sounds-Write and "Teach Your
-          // Child to Read in 100 Easy Lessons" is still open. Replace this
-          // with the programme's title in Parent Mode once it is picked.
-          resource: "Structured synthetic phonics (programme not yet chosen)",
-          recurrence: { type: "weekdays", days: [1, 2, 3, 4, 5] }, // Mon–Fri
-        },
-        {
-          id: "b-khan",
-          label: "Early maths and literacy",
-          icon: "🦘",
-          resource: "Khan Academy Kids",
-          recurrence: { type: "weekdays", days: [1, 2, 3, 4, 5] }, // Mon–Fri
-        },
-        {
-          id: "b-readaloud",
-          label: "Read-aloud",
+          id: "b-reading",
+          label: "Reading",
           icon: "📖",
-          resource: "Read-aloud and audiobooks from the home library and Libby",
+          resource: "Reading Eggs lessons, done with an adult alongside",
+          recurrence: { type: "daily" },
+        },
+        {
+          id: "b-writing",
+          label: "Writing",
+          icon: "✏️",
+          resource: "Simple words from the day's reading lesson, and numbers on a whiteboard",
+          recurrence: { type: "perWeek", times: 3 },
+        },
+        {
+          id: "b-beast",
+          label: "Maths",
+          icon: "🧮",
+          resource: "Beast Academy, counting",
+          recurrence: { type: "weekdays", days: [1, 2, 3, 4, 5] }, // Mon–Fri
+        },
+        {
+          id: "b-piano",
+          label: "Piano",
+          icon: "🎹",
+          resource: "Simply Piano",
           recurrence: { type: "daily" },
         },
       ],

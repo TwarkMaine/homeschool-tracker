@@ -25,6 +25,12 @@
 //     { type: "daily" }
 //     { type: "weekdays", days: [1,2,3,4,5] }   // 0=Sun .. 6=Sat
 //     { type: "weekly",   day: 3 }              // a single weekday 0..6
+//     { type: "perWeek",  times: 3 }            // any 3 days, Monday to Sunday
+//
+//   A perWeek task has no fixed days. It is on offer every day of its week
+//   until it has been done `times` times, and it only becomes REQUIRED on a
+//   day when there are no spare days left to fit the rest in. See
+//   weekProgress below.
 //
 //   completions = {
 //     [kidId]: {
@@ -82,7 +88,8 @@ export function addDays(date, deltaDays) {
 // Recurrence resolution
 // ----------------------------------------------------------------------
 
-// Does a single recurrence rule fire on the given date?
+// Does a single fixed-day recurrence rule fire on the given date?
+// (perWeek has no fixed days; it is resolved by weekProgress instead.)
 function recurrenceMatches(recurrence, date) {
   if (!recurrence || !recurrence.type) return false;
   const dow = dayOfWeek(date);
@@ -103,12 +110,78 @@ function findKid(config, kidId) {
   return config.kids.find((k) => k.id === kidId) || null;
 }
 
-// The list of task instances due for a kid on a given date.
-// Returns the task objects (label/icon/id/recurrence) that fire that day.
-export function tasksForDay(config, kidId, date) {
+// How many times a week a perWeek rule asks for: a whole number 1..7, or 0
+// when the rule is not perWeek or its number is unusable (such a task never
+// shows, the same as a weekday task with no days ticked).
+function perWeekTimes(recurrence) {
+  if (!recurrence || recurrence.type !== "perWeek") return 0;
+  const n = recurrence.times;
+  return Number.isInteger(n) && n >= 1 ? Math.min(n, 7) : 0;
+}
+
+// The Monday of the week `date` falls in. Weeks run Monday to Sunday.
+export function weekStart(date) {
+  return addDays(date, -((dayOfWeek(date) + 6) % 7));
+}
+
+// Where a perWeek task stands on `date`. Returns null for any other kind of
+// task. Everything is counted inside the Monday-to-Sunday week of `date`:
+//
+//   times      how many times a week the task asks for
+//   done       times done so far this week, today included
+//   doneBefore times done on the days before today
+//   daysLeft   days left in the week, today included (Monday 7 .. Sunday 1)
+//   onOffer    the task still shows today: the target was not already
+//              reached on an earlier day
+//   dueToday   the task is REQUIRED today: the completions still missing need
+//              every day that is left, so skipping today means missing the week
+//
+// dueToday is judged from the days BEFORE today, so ticking or unticking the
+// task today never changes whether today required it.
+export function weekProgress(task, kidId, date, completions) {
+  const times = perWeekTimes(task && task.recurrence);
+  if (!times) return null;
+  const monday = weekStart(date);
+  const daysBefore = (dayOfWeek(date) + 6) % 7;
+  let doneBefore = 0;
+  for (let i = 0; i < daysBefore; i++) {
+    if (isTaskComplete(completions, kidId, addDays(monday, i), task.id)) doneBefore++;
+  }
+  const doneToday = isTaskComplete(completions, kidId, date, task.id);
+  const daysLeft = 7 - daysBefore;
+  const onOffer = doneBefore < times;
+  return {
+    times,
+    done: doneBefore + (doneToday ? 1 : 0),
+    doneBefore,
+    daysLeft,
+    onOffer,
+    dueToday: onOffer && times - doneBefore >= daysLeft,
+  };
+}
+
+// The tasks SHOWN to a kid on a given date: every fixed-day task that fires
+// that day, plus every perWeek task whose weekly target was not already
+// reached on an earlier day of the week.
+// `completions` is only needed for perWeek tasks; without it they simply show
+// all week.
+export function tasksForDay(config, kidId, date, completions) {
   const kid = findKid(config, kidId);
   if (!kid || !Array.isArray(kid.tasks)) return [];
-  return kid.tasks.filter((t) => recurrenceMatches(t.recurrence, date));
+  return kid.tasks.filter((t) => {
+    const week = weekProgress(t, kidId, date, completions);
+    return week ? week.onOffer : recurrenceMatches(t.recurrence, date);
+  });
+}
+
+// The tasks a kid MUST do on a given date for the day to count. Fixed-day
+// tasks are always required on their days. A perWeek task is required only
+// when it has run out of spare days.
+export function requiredTasksForDay(config, kidId, date, completions) {
+  return tasksForDay(config, kidId, date, completions).filter((t) => {
+    const week = weekProgress(t, kidId, date, completions);
+    return week ? week.dueToday : true;
+  });
 }
 
 // ----------------------------------------------------------------------
@@ -125,10 +198,11 @@ export function isTaskComplete(completions, kidId, date, taskId) {
   );
 }
 
-// Is the whole day complete (every due task done)?
-// A day with zero due tasks is considered complete (nothing to do).
+// Is the whole day complete (every REQUIRED task done)?
+// A day with zero required tasks is considered complete (nothing to do), so a
+// perWeek task that still has spare days never holds up free time or the streak.
 export function isDayComplete(config, kidId, date, completions) {
-  const due = tasksForDay(config, kidId, date);
+  const due = requiredTasksForDay(config, kidId, date, completions);
   if (due.length === 0) return true;
   return due.every((t) => isTaskComplete(completions, kidId, date, t.id));
 }
@@ -243,6 +317,14 @@ export function kidAgeFor(kid, date) {
 export function describeRecurrence(recurrence) {
   if (!recurrence || typeof recurrence !== "object") return "No days set";
   if (recurrence.type === "daily") return "Every day";
+  if (recurrence.type === "perWeek") {
+    const times = perWeekTimes(recurrence);
+    if (!times) return "No days set";
+    if (times === 7) return "Every day";
+    if (times === 1) return "Once a week";
+    if (times === 2) return "Twice a week";
+    return `${times} times a week`;
+  }
   if (recurrence.type === "weekly") {
     return Number.isInteger(recurrence.day) && recurrence.day >= 0 && recurrence.day <= 6
       ? PLURAL_DAY_NAMES[recurrence.day]

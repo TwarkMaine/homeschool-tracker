@@ -3,6 +3,7 @@
 
 import {
   tasksForDay,
+  weekProgress,
   isDayComplete,
   currentStreak,
   toggleCompletion,
@@ -262,7 +263,7 @@ function renderToday() {
   document.body.setAttribute("data-theme", kid.theme || "violet");
   els.greeting.textContent = `Hi ${kid.name}! 👋`;
 
-  const due = tasksForDay(state.config, kid.id, state.today);
+  const due = tasksForDay(state.config, kid.id, state.today, state.completions);
   const complete = isDayComplete(state.config, kid.id, state.today, state.completions);
   const streak = currentStreak(state.config, kid.id, state.today, state.completions);
 
@@ -274,19 +275,35 @@ function renderToday() {
   els.emptyNote.hidden = due.length !== 0;
   for (const task of due) {
     const done = isTaskDone(kid.id, state.today, task.id);
+    // A times-a-week task carries its week with it: one dot per time asked
+    // for (so a child who cannot read yet can still count them) and the same
+    // thing in words. Until it runs out of spare days it is a choice, not a
+    // must, and it looks like one.
+    const week = weekProgress(task, kid.id, state.today, state.completions);
+    const weekText = week ? `${week.done} of ${week.times} this week` : "";
+    const optional = Boolean(week) && !week.dueToday && !done;
     const ring = document.createElement("button");
-    ring.className = "ring" + (done ? " done" : "");
+    ring.className = "ring" + (done ? " done" : "") + (optional ? " optional" : "");
     ring.type = "button";
     ring.setAttribute("aria-pressed", String(done));
-    ring.setAttribute("aria-label", (task.label || "Task") + (done ? " (done)" : ""));
+    ring.setAttribute("aria-label",
+      (task.label || "Task") + (weekText ? `, ${weekText}` : "") + (done ? " (done)" : ""));
     ring.innerHTML =
       `<span class="ring-circle" aria-hidden="true">${task.icon || "⭐"}</span>` +
-      `<span class="ring-label">${escapeHtml(task.label || "")}</span>`;
+      `<span class="ring-label">${escapeHtml(task.label || "")}</span>` +
+      (week
+        ? `<span class="ring-week" aria-hidden="true"><span class="ring-pips">` +
+          Array.from({ length: week.times }, (_, i) =>
+            `<span class="pip${i < week.done ? " on" : ""}"></span>`).join("") +
+          `</span><span class="ring-week-text">${weekText}</span></span>`
+        : "");
     ring.addEventListener("click", () => onToggle(kid.id, task.id));
     els.rings.appendChild(ring);
   }
 
-  // Free time banner shows only when there were tasks AND all are done.
+  // Free time banner shows only when there were tasks AND every task that is
+  // required today is done. A times-a-week task with spare days left is not
+  // required, so it never holds the banner back.
   els.freetime.hidden = !(due.length > 0 && complete);
 }
 
@@ -494,7 +511,7 @@ function renderTaskRow(kid, task, taskIdx) {
   // Recurrence type
   const sel = document.createElement("select");
   sel.className = "rec-type";
-  for (const [val, txt] of [["daily", "Daily"], ["weekdays", "Weekdays"], ["weekly", "Weekly"]]) {
+  for (const [val, txt] of [["daily", "Daily"], ["weekdays", "Weekdays"], ["weekly", "Weekly"], ["perWeek", "Times a week"]]) {
     const o = document.createElement("option");
     o.value = val; o.textContent = txt;
     if (task.recurrence && task.recurrence.type === val) o.selected = true;
@@ -502,7 +519,7 @@ function renderTaskRow(kid, task, taskIdx) {
   }
   row.appendChild(sel);
 
-  // Day picker (used by weekdays + weekly)
+  // Day picker (used by weekdays + weekly), or the number picker (times a week)
   const picker = document.createElement("span");
   picker.className = "weekday-picker";
   row.appendChild(picker);
@@ -511,6 +528,27 @@ function renderTaskRow(kid, task, taskIdx) {
     picker.innerHTML = "";
     const type = task.recurrence.type;
     if (type === "daily") return;
+    if (type === "perWeek") {
+      const wrap = document.createElement("label");
+      wrap.className = "times-picker";
+      const num = document.createElement("select");
+      num.className = "rec-times";
+      num.setAttribute("aria-label", "How many times a week");
+      for (let n = 1; n <= 7; n++) {
+        const o = document.createElement("option");
+        o.value = String(n); o.textContent = String(n);
+        if (task.recurrence.times === n) o.selected = true;
+        num.appendChild(o);
+      }
+      num.addEventListener("change", () => {
+        task.recurrence = { type: "perWeek", times: Number(num.value) };
+        autosave();
+      });
+      wrap.appendChild(num);
+      wrap.appendChild(document.createTextNode("times a week, any days"));
+      picker.appendChild(wrap);
+      return;
+    }
     const isWeekly = type === "weekly";
     for (let d = 0; d < 7; d++) {
       const wrap = document.createElement("label");
@@ -539,6 +577,7 @@ function renderTaskRow(kid, task, taskIdx) {
     const type = sel.value;
     if (type === "daily") task.recurrence = { type: "daily" };
     else if (type === "weekdays") task.recurrence = { type: "weekdays", days: task.recurrence.days || [1, 2, 3, 4, 5] };
+    else if (type === "perWeek") task.recurrence = { type: "perWeek", times: Number.isInteger(task.recurrence.times) ? task.recurrence.times : 3 };
     else task.recurrence = { type: "weekly", day: typeof task.recurrence.day === "number" ? task.recurrence.day : 1 };
     rebuildPicker();
     autosave();
