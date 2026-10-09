@@ -375,6 +375,16 @@ check("front page describes a times-a-week task in words",
   check("Parent Mode offers times a week with a 1 to 7 picker",
     appJs.includes('["perWeek", "Times a week"]') && /for \(let n = 1; n <= 7; n\+\+\)/.test(appJs));
 }
+{
+  const targets = (kid) => Object.fromEntries(kid.tasks.map((t) =>
+    [t.label, t.recurrence.type === "perWeek" ? t.recurrence.times : t.recurrence.type]));
+  eq("seed: the older child's weekly targets",
+    targets(defaultConfig.kids[0]),
+    { Reading: "daily", Music: "daily", Maths: 5, Handwriting: 3, Writing: 1, Biology: 4 });
+  eq("seed: the younger child's weekly targets, with no biology",
+    targets(defaultConfig.kids[1]),
+    { Reading: "daily", Music: "daily", Maths: 5, Handwriting: 3 });
+}
 check("the seed gives at least one subject a weekly target",
   defaultConfig.kids.every((k) => k.tasks.some((t) => t.recurrence.type === "perWeek")));
 
